@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"time"
 
 	"github.com/tk-425/kenv/internal/vault"
@@ -22,6 +23,8 @@ var (
 	saveVaultCiphertext = vault.SaveCiphertext
 	encryptVaultData    = vault.EncryptVault
 	decryptVaultData    = vault.DecryptVault
+	parentEnviron       = os.Environ
+	runChildProcess     = execChildProcess
 
 	now = time.Now
 )
@@ -103,4 +106,39 @@ func formatCommandError(err error) string {
 	default:
 		return err.Error()
 	}
+}
+
+func execChildProcess(command []string, env []string) (int, error) {
+	cmd := exec.Command(command[0], command[1:]...)
+	cmd.Env = env
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
+
+	if err := cmd.Start(); err != nil {
+		return 0, fmt.Errorf("start child command: %w", err)
+	}
+
+	if err := cmd.Wait(); err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			return exitCode(exitErr.ProcessState), nil
+		}
+
+		return 0, fmt.Errorf("wait for child command: %w", err)
+	}
+
+	return exitCode(cmd.ProcessState), nil
+}
+
+func exitCode(state *os.ProcessState) int {
+	if state == nil {
+		return 1
+	}
+
+	if code := state.ExitCode(); code >= 0 {
+		return code
+	}
+
+	return 1
 }

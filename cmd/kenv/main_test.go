@@ -60,7 +60,6 @@ func TestRun(t *testing.T) {
 		{name: "init help", args: []string{"init", "--help"}, want: 0},
 		{name: "run help", args: []string{"run", "--help"}, want: 0},
 		{name: "run invalid shape", args: []string{"run", "--env", ".env"}, want: 2},
-		{name: "run valid shape not implemented", args: []string{"run", "--env", ".env", "--", "echo", "hi"}, want: 1},
 	}
 
 	for _, tc := range testCases {
