@@ -75,7 +75,7 @@ func GetCredentialByName(v Vault, name string) (Credential, error) {
 	}
 
 	for _, credential := range v.Credentials {
-		if strings.TrimSpace(credential.Name) == normalizedName {
+		if credential.Name == normalizedName {
 			return credential, nil
 		}
 	}
@@ -90,7 +90,7 @@ func RemoveCredential(v *Vault, name string) error {
 	}
 
 	for i, credential := range v.Credentials {
-		if strings.TrimSpace(credential.Name) != normalizedName {
+		if credential.Name != normalizedName {
 			continue
 		}
 
