@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -278,6 +279,37 @@ func TestRunRemoveDeletesCredentialAndPersistsVault(t *testing.T) {
 	}
 }
 
+func TestRunCmdHelperProcess(t *testing.T) {
+	args := helperProcessArgs()
+	if len(args) == 0 || args[0] != "kenv-test-child" {
+		return
+	}
+
+	if len(args) < 2 {
+		os.Exit(97)
+	}
+
+	switch args[1] {
+	case "print-env":
+		for _, key := range args[2:] {
+			_, _ = os.Stdout.WriteString(key + "=" + os.Getenv(key) + "\n")
+		}
+		os.Exit(0)
+	case "exit":
+		if len(args) != 3 {
+			os.Exit(97)
+		}
+
+		code, err := strconv.Atoi(args[2])
+		if err != nil {
+			os.Exit(97)
+		}
+		os.Exit(code)
+	default:
+		os.Exit(97)
+	}
+}
+
 type cliStubOptions struct {
 	stdout                *bytes.Buffer
 	stderr                *bytes.Buffer
@@ -416,6 +448,47 @@ func TestRunCmdPassesThroughOrdinaryEnvWithoutVaultAccess(t *testing.T) {
 	}
 }
 
+func TestRunCmdEndToEndPassesThroughOrdinaryEnv(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	envPath := writeTestEnvFile(t, "PORT=3000\nLOG_LEVEL=debug\n")
+
+	var stdoutBuf bytes.Buffer
+	var stderrBuf bytes.Buffer
+	promptCalled := false
+	reset := stubCLIEnv(t, cliStubOptions{
+		stdout: &stdoutBuf,
+		stderr: &stderrBuf,
+		parentEnviron: func() []string {
+			return []string{
+				"PATH=/usr/bin",
+				"HOME=/tmp/test-home",
+				"TMPDIR=/tmp/runtime",
+				"IGNORED=value",
+			}
+		},
+		promptPassphrase: func(string) (string, error) {
+			promptCalled = true
+			return "", nil
+		},
+	})
+	defer reset()
+
+	args := append([]string{"--env", envPath, "--"}, helperCommand("print-env", "PATH", "HOME", "TMPDIR", "PORT", "LOG_LEVEL", "IGNORED")...)
+	if got := runCmd(args); got != 0 {
+		t.Fatalf("runCmd() = %d, want 0", got)
+	}
+	if promptCalled {
+		t.Fatal("promptPassphrase() called, want vault unlock skipped when no placeholders exist")
+	}
+	if got := stdoutBuf.String(); got != "PATH=/usr/bin\nHOME=/tmp/test-home\nTMPDIR=/tmp/runtime\nPORT=3000\nLOG_LEVEL=debug\nIGNORED=\n" {
+		t.Fatalf("stdout = %q, want child env output with baseline and parsed values", got)
+	}
+	if stderrBuf.Len() != 0 {
+		t.Fatalf("stderr = %q, want empty", stderrBuf.String())
+	}
+}
+
 func TestRunCmdResolvesKnownPlaceholders(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	createTestVault(t, "vault-passphrase", []vault.Credential{
@@ -451,6 +524,49 @@ func TestRunCmdResolvesKnownPlaceholders(t *testing.T) {
 
 	if !equalStringSlices(gotEnv, []string{"PATH=/usr/bin", "HOME=/tmp/test-home", "OPENAI_API_KEY=sk-openai-secret", "PORT=3000"}) {
 		t.Fatalf("env = %#v, want resolved secret env", gotEnv)
+	}
+}
+
+func TestRunCmdEndToEndResolvesKnownPlaceholders(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	createTestVault(t, "vault-passphrase", []vault.Credential{
+		{
+			Name:        "openai",
+			Placeholder: "kvn_aaaaaaaaaaaaaaaaaaaa",
+			Secret:      "sk-openai-secret",
+			CreatedAt:   time.Unix(1700000000, 0).UTC(),
+		},
+	})
+
+	envPath := writeTestEnvFile(t, "OPENAI_API_KEY=kvn_aaaaaaaaaaaaaaaaaaaa\nPORT=3000\n")
+
+	var stdoutBuf bytes.Buffer
+	var stderrBuf bytes.Buffer
+	reset := stubCLIEnv(t, cliStubOptions{
+		stdout: &stdoutBuf,
+		stderr: &stderrBuf,
+		parentEnviron: func() []string {
+			return []string{
+				"PATH=/usr/bin",
+				"HOME=/tmp/test-home",
+			}
+		},
+		promptPassphrase: func(string) (string, error) { return "vault-passphrase", nil },
+	})
+	defer reset()
+
+	args := append([]string{"--env", envPath, "--"}, helperCommand("print-env", "PATH", "HOME", "OPENAI_API_KEY", "PORT")...)
+	if got := runCmd(args); got != 0 {
+		t.Fatalf("runCmd() = %d, want 0", got)
+	}
+	if got := stdoutBuf.String(); got != "PATH=/usr/bin\nHOME=/tmp/test-home\nOPENAI_API_KEY=sk-openai-secret\nPORT=3000\n" {
+		t.Fatalf("stdout = %q, want child env output with resolved secret", got)
+	}
+	if strings.Contains(stdoutBuf.String(), "kvn_aaaaaaaaaaaaaaaaaaaa") {
+		t.Fatalf("stdout unexpectedly contains unresolved placeholder: %q", stdoutBuf.String())
+	}
+	if stderrBuf.Len() != 0 {
+		t.Fatalf("stderr = %q, want empty", stderrBuf.String())
 	}
 }
 
@@ -540,6 +656,77 @@ func TestRunCmdInheritEnvOverlaysParsedAndResolvedValues(t *testing.T) {
 	}
 }
 
+func TestRunCmdEndToEndInheritEnvOverlaysParsedAndResolvedValues(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	createTestVault(t, "vault-passphrase", []vault.Credential{
+		{
+			Name:        "openai",
+			Placeholder: "kvn_aaaaaaaaaaaaaaaaaaaa",
+			Secret:      "sk-openai-secret",
+			CreatedAt:   time.Unix(1700000000, 0).UTC(),
+		},
+	})
+
+	envPath := writeTestEnvFile(t, "OPENAI_API_KEY=kvn_aaaaaaaaaaaaaaaaaaaa\nAPP_MODE=dev\nLOG_LEVEL=debug\n")
+
+	var stdoutBuf bytes.Buffer
+	var stderrBuf bytes.Buffer
+	reset := stubCLIEnv(t, cliStubOptions{
+		stdout: &stdoutBuf,
+		stderr: &stderrBuf,
+		parentEnviron: func() []string {
+			return []string{
+				"PATH=/usr/bin",
+				"OPENAI_API_KEY=parent-secret",
+				"APP_MODE=prod",
+			}
+		},
+		promptPassphrase: func(string) (string, error) { return "vault-passphrase", nil },
+	})
+	defer reset()
+
+	args := append([]string{"--inherit-env", "--env", envPath, "--"}, helperCommand("print-env", "PATH", "OPENAI_API_KEY", "APP_MODE", "LOG_LEVEL")...)
+	if got := runCmd(args); got != 0 {
+		t.Fatalf("runCmd() = %d, want 0", got)
+	}
+	if got := stdoutBuf.String(); got != "PATH=/usr/bin\nOPENAI_API_KEY=sk-openai-secret\nAPP_MODE=dev\nLOG_LEVEL=debug\n" {
+		t.Fatalf("stdout = %q, want inherited env with parsed and resolved overlays", got)
+	}
+	if stderrBuf.Len() != 0 {
+		t.Fatalf("stderr = %q, want empty", stderrBuf.String())
+	}
+}
+
+func TestRunCmdEndToEndReturnsChildExitCode(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	envPath := writeTestEnvFile(t, "LOG_LEVEL=debug\n")
+
+	var stdoutBuf bytes.Buffer
+	var stderrBuf bytes.Buffer
+	reset := stubCLIEnv(t, cliStubOptions{
+		stdout: &stdoutBuf,
+		stderr: &stderrBuf,
+		parentEnviron: func() []string {
+			return []string{
+				"PATH=/usr/bin",
+			}
+		},
+	})
+	defer reset()
+
+	args := append([]string{"--env", envPath, "--"}, helperCommand("exit", "23")...)
+	if got := runCmd(args); got != 23 {
+		t.Fatalf("runCmd() = %d, want 23", got)
+	}
+	if stdoutBuf.Len() != 0 {
+		t.Fatalf("stdout = %q, want empty", stdoutBuf.String())
+	}
+	if stderrBuf.Len() != 0 {
+		t.Fatalf("stderr = %q, want empty", stderrBuf.String())
+	}
+}
+
 func TestRunCmdFailsWhenPromptRequiresTTYForPlaceholders(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	createTestVault(t, "vault-passphrase", nil)
@@ -578,6 +765,21 @@ func writeTestEnvFile(t *testing.T, content string) string {
 	}
 
 	return path
+}
+
+func helperCommand(args ...string) []string {
+	command := []string{os.Args[0], "-test.run=^TestRunCmdHelperProcess$", "--", "kenv-test-child"}
+	return append(command, args...)
+}
+
+func helperProcessArgs() []string {
+	for index, arg := range os.Args {
+		if arg == "--" {
+			return append([]string(nil), os.Args[index+1:]...)
+		}
+	}
+
+	return nil
 }
 
 func equalStringSlices(got, want []string) bool {
