@@ -15,3 +15,9 @@ type Credential struct {
 	Secret      string    `json:"secret"`
 	CreatedAt   time.Time `json:"created_at"`
 }
+
+type CredentialMetadata struct {
+	Name        string    `json:"name"`
+	Placeholder string    `json:"placeholder"`
+	CreatedAt   time.Time `json:"created_at"`
+}
