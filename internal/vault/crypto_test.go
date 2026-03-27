@@ -112,6 +112,18 @@ func TestDecryptVaultRejectsDuplicateCredentialNames(t *testing.T) {
 	}
 }
 
+func TestDecryptVaultRejectsTrimEquivalentCredentialNames(t *testing.T) {
+	ciphertext, err := encryptPlaintext([]byte(`{"version":1,"credentials":[{"name":"openai","placeholder":"kvn_1234567890abcdefghij","secret":"a","created_at":"2026-03-26T00:00:00Z"},{"name":" openai ","placeholder":"kvn_abcdefghij1234567890","secret":"b","created_at":"2026-03-26T00:00:00Z"}]}`), "correct horse battery staple")
+	if err != nil {
+		t.Fatalf("encryptPlaintext() error = %v", err)
+	}
+
+	_, err = DecryptVault(ciphertext, "correct horse battery staple")
+	if !errors.Is(err, ErrInvalidVaultData) {
+		t.Fatalf("DecryptVault() error = %v, want ErrInvalidVaultData", err)
+	}
+}
+
 func TestDecryptVaultRejectsDuplicatePlaceholders(t *testing.T) {
 	ciphertext, err := encryptPlaintext([]byte(`{"version":1,"credentials":[{"name":"openai","placeholder":"kvn_1234567890abcdefghij","secret":"a","created_at":"2026-03-26T00:00:00Z"},{"name":"anthropic","placeholder":"kvn_1234567890abcdefghij","secret":"b","created_at":"2026-03-26T00:00:00Z"}]}`), "correct horse battery staple")
 	if err != nil {
