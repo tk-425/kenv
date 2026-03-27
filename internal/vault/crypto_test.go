@@ -1,14 +1,10 @@
 package vault
 
 import (
-	"bytes"
 	"errors"
-	"io"
 	"strings"
 	"testing"
 	"time"
-
-	"filippo.io/age"
 )
 
 func TestEncryptDecryptVaultRoundTrip(t *testing.T) {
@@ -104,6 +100,69 @@ func TestDecryptVaultRejectsUnsupportedVaultVersion(t *testing.T) {
 	}
 }
 
+func TestDecryptVaultRejectsDuplicateCredentialNames(t *testing.T) {
+	ciphertext, err := encryptPlaintext([]byte(`{"version":1,"credentials":[{"name":"openai","placeholder":"kvn_1234567890abcdefghij","secret":"a","created_at":"2026-03-26T00:00:00Z"},{"name":"openai","placeholder":"kvn_abcdefghij1234567890","secret":"b","created_at":"2026-03-26T00:00:00Z"}]}`), "correct horse battery staple")
+	if err != nil {
+		t.Fatalf("encryptPlaintext() error = %v", err)
+	}
+
+	_, err = DecryptVault(ciphertext, "correct horse battery staple")
+	if !errors.Is(err, ErrInvalidVaultData) {
+		t.Fatalf("DecryptVault() error = %v, want ErrInvalidVaultData", err)
+	}
+}
+
+func TestDecryptVaultRejectsDuplicatePlaceholders(t *testing.T) {
+	ciphertext, err := encryptPlaintext([]byte(`{"version":1,"credentials":[{"name":"openai","placeholder":"kvn_1234567890abcdefghij","secret":"a","created_at":"2026-03-26T00:00:00Z"},{"name":"anthropic","placeholder":"kvn_1234567890abcdefghij","secret":"b","created_at":"2026-03-26T00:00:00Z"}]}`), "correct horse battery staple")
+	if err != nil {
+		t.Fatalf("encryptPlaintext() error = %v", err)
+	}
+
+	_, err = DecryptVault(ciphertext, "correct horse battery staple")
+	if !errors.Is(err, ErrInvalidVaultData) {
+		t.Fatalf("DecryptVault() error = %v, want ErrInvalidVaultData", err)
+	}
+}
+
+func TestDecryptVaultRejectsEmptyCredentialFields(t *testing.T) {
+	testCases := []string{
+		`{"version":1,"credentials":[{"name":"","placeholder":"kvn_1234567890abcdefghij","secret":"a","created_at":"2026-03-26T00:00:00Z"}]}`,
+		`{"version":1,"credentials":[{"name":"openai","placeholder":"","secret":"a","created_at":"2026-03-26T00:00:00Z"}]}`,
+	}
+
+	for _, plaintext := range testCases {
+		ciphertext, err := encryptPlaintext([]byte(plaintext), "correct horse battery staple")
+		if err != nil {
+			t.Fatalf("encryptPlaintext() error = %v", err)
+		}
+
+		_, err = DecryptVault(ciphertext, "correct horse battery staple")
+		if !errors.Is(err, ErrInvalidVaultData) {
+			t.Fatalf("DecryptVault() error = %v, want ErrInvalidVaultData", err)
+		}
+	}
+}
+
+func TestDecryptVaultRejectsMalformedPlaceholders(t *testing.T) {
+	testCases := []string{
+		`{"version":1,"credentials":[{"name":"openai","placeholder":"${OPENAI_API_KEY}","secret":"a","created_at":"2026-03-26T00:00:00Z"}]}`,
+		`{"version":1,"credentials":[{"name":"openai","placeholder":"kvn_ABCDEF1234567890abcd","secret":"a","created_at":"2026-03-26T00:00:00Z"}]}`,
+		`{"version":1,"credentials":[{"name":"openai","placeholder":"kvn_short","secret":"a","created_at":"2026-03-26T00:00:00Z"}]}`,
+	}
+
+	for _, plaintext := range testCases {
+		ciphertext, err := encryptPlaintext([]byte(plaintext), "correct horse battery staple")
+		if err != nil {
+			t.Fatalf("encryptPlaintext() error = %v", err)
+		}
+
+		_, err = DecryptVault(ciphertext, "correct horse battery staple")
+		if !errors.Is(err, ErrInvalidVaultData) {
+			t.Fatalf("DecryptVault() error = %v, want ErrInvalidVaultData", err)
+		}
+	}
+}
+
 func TestEncryptVaultCiphertextDiffersFromPlaintext(t *testing.T) {
 	vault := testVault()
 
@@ -147,25 +206,7 @@ func encryptPlaintext(plaintext []byte, passphrase string) ([]byte, error) {
 		return nil, err
 	}
 
-	return encryptBytes(plaintext, recipient)
-}
-
-func encryptBytes(plaintext []byte, recipient age.Recipient) ([]byte, error) {
-	var ciphertext bytes.Buffer
-
-	writer, err := age.Encrypt(&ciphertext, recipient)
-	if err != nil {
-		return nil, err
-	}
-	if _, err := io.Copy(writer, bytes.NewReader(plaintext)); err != nil {
-		_ = writer.Close()
-		return nil, err
-	}
-	if err := writer.Close(); err != nil {
-		return nil, err
-	}
-
-	return ciphertext.Bytes(), nil
+	return encryptWithRecipient(plaintext, recipient)
 }
 
 func testVault() Vault {
