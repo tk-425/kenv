@@ -2,7 +2,8 @@ package main
 
 import (
 	"fmt"
-	"os"
+
+	"github.com/tk-425/kenv/internal/vault"
 )
 
 func runAdd(args []string) int {
@@ -15,11 +16,34 @@ func runAdd(args []string) int {
 		return 2
 	}
 
-	printNotImplemented("add")
-	return 1
+	v, passphrase, err := loadUnlockedVault()
+	if err != nil {
+		printCommandError(err)
+		return 1
+	}
+
+	secret, err := promptSecretValue("Secret value: ")
+	if err != nil {
+		printCommandError(err)
+		return 1
+	}
+
+	credential, err := vault.AddCredential(&v, args[0], secret, now())
+	if err != nil {
+		printCommandError(err)
+		return 1
+	}
+
+	if err := saveVault(v, passphrase); err != nil {
+		printCommandError(err)
+		return 1
+	}
+
+	fmt.Fprintln(stdout, credential.Placeholder)
+	return 0
 }
 
 func printAddUsage() {
-	fmt.Fprintln(os.Stderr, `Usage:
+	fmt.Fprintln(stderr, `Usage:
   kenv add <name>`)
 }

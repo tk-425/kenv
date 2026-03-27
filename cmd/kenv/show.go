@@ -2,7 +2,8 @@ package main
 
 import (
 	"fmt"
-	"os"
+
+	"github.com/tk-425/kenv/internal/vault"
 )
 
 func runShow(args []string) int {
@@ -15,11 +16,23 @@ func runShow(args []string) int {
 		return 2
 	}
 
-	printNotImplemented("show")
-	return 1
+	v, _, err := loadUnlockedVault()
+	if err != nil {
+		printCommandError(err)
+		return 1
+	}
+
+	credential, err := vault.GetCredentialByName(v, args[0])
+	if err != nil {
+		printCommandError(err)
+		return 1
+	}
+
+	fmt.Fprintln(stdout, credential.Placeholder)
+	return 0
 }
 
 func printShowUsage() {
-	fmt.Fprintln(os.Stderr, `Usage:
+	fmt.Fprintln(stderr, `Usage:
   kenv show <name>`)
 }

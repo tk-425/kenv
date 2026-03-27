@@ -34,14 +34,14 @@ func run(args []string) int {
 		printTopLevelUsage()
 		return 0
 	default:
-		fmt.Fprintf(os.Stderr, "unknown command: %s\n\n", args[0])
+		fmt.Fprintf(stderr, "unknown command: %s\n\n", args[0])
 		printTopLevelUsage()
 		return 2
 	}
 }
 
 func printTopLevelUsage() {
-	fmt.Fprintf(os.Stderr, `kenv stores secrets in a local encrypted vault and resolves placeholders at runtime.
+	fmt.Fprintf(stderr, `kenv stores secrets in a local encrypted vault and resolves placeholders at runtime.
 
 Usage:
   kenv <command> [arguments]
@@ -62,5 +62,5 @@ Help:
 }
 
 func printNotImplemented(command string) {
-	fmt.Fprintf(os.Stderr, "kenv %s is not implemented yet\n", command)
+	fmt.Fprintf(stderr, "kenv %s is not implemented yet\n", command)
 }
