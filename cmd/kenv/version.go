@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"os"
 )
 
 var version = "dev"
@@ -17,11 +16,11 @@ func runVersion(args []string) int {
 		return 2
 	}
 
-	fmt.Fprintln(os.Stdout, version)
+	fmt.Fprintln(stdout, version)
 	return 0
 }
 
 func printVersionUsage() {
-	fmt.Fprintln(os.Stderr, `Usage:
+	fmt.Fprintln(stderr, `Usage:
   kenv version`)
 }
