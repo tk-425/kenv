@@ -20,6 +20,10 @@ var (
 
 var placeholderPattern = regexp.MustCompile(`^kvn_[a-z0-9]{20}$`)
 
+func IsPlaceholder(value string) bool {
+	return placeholderPattern.MatchString(value)
+}
+
 func EncryptVault(v Vault, passphrase string) ([]byte, error) {
 	plaintext, err := marshalVault(v)
 	if err != nil {
