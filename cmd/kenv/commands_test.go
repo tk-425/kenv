@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -282,6 +284,8 @@ type cliStubOptions struct {
 	promptPassphrase      func(string) (string, error)
 	promptPassphraseTwice func(string, string) (string, error)
 	promptSecret          func(string) (string, error)
+	parentEnviron         func() []string
+	runChildProcess       func([]string, []string) (int, error)
 	now                   func() time.Time
 }
 
@@ -293,6 +297,8 @@ func stubCLIEnv(t *testing.T, opts cliStubOptions) func() {
 	originalPromptPassphrase := promptPassphrase
 	originalPromptPassphraseTwice := promptPassphraseTwice
 	originalPromptSecret := promptSecretValue
+	originalParentEnviron := parentEnviron
+	originalRunChildProcess := runChildProcess
 	originalNow := now
 
 	stdout = bytes.NewBuffer(nil)
@@ -314,6 +320,12 @@ func stubCLIEnv(t *testing.T, opts cliStubOptions) func() {
 	if opts.promptSecret != nil {
 		promptSecretValue = opts.promptSecret
 	}
+	if opts.parentEnviron != nil {
+		parentEnviron = opts.parentEnviron
+	}
+	if opts.runChildProcess != nil {
+		runChildProcess = opts.runChildProcess
+	}
 	if opts.now != nil {
 		now = opts.now
 	}
@@ -324,6 +336,8 @@ func stubCLIEnv(t *testing.T, opts cliStubOptions) func() {
 		promptPassphrase = originalPromptPassphrase
 		promptPassphraseTwice = originalPromptPassphraseTwice
 		promptSecretValue = originalPromptSecret
+		parentEnviron = originalParentEnviron
+		runChildProcess = originalRunChildProcess
 		now = originalNow
 	}
 }
@@ -357,4 +371,215 @@ func decryptTestVault(t *testing.T, passphrase string) vault.Vault {
 	}
 
 	return decrypted
+}
+
+func TestRunCmdPassesThroughOrdinaryEnvWithoutVaultAccess(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	envPath := writeTestEnvFile(t, "PORT=3000\nLOG_LEVEL=debug\n")
+
+	var gotCommand []string
+	var gotEnv []string
+	promptCalled := false
+	reset := stubCLIEnv(t, cliStubOptions{
+		parentEnviron: func() []string {
+			return []string{
+				"PATH=/usr/bin",
+				"HOME=/tmp/test-home",
+				"IGNORED=value",
+				"TMPDIR=/tmp/runtime",
+			}
+		},
+		promptPassphrase: func(string) (string, error) {
+			promptCalled = true
+			return "", nil
+		},
+		runChildProcess: func(command []string, env []string) (int, error) {
+			gotCommand = append([]string(nil), command...)
+			gotEnv = append([]string(nil), env...)
+			return 0, nil
+		},
+	})
+	defer reset()
+
+	if got := runCmd([]string{"--env", envPath, "--", "echo", "hi"}); got != 0 {
+		t.Fatalf("runCmd() = %d, want 0", got)
+	}
+	if promptCalled {
+		t.Fatal("promptPassphrase() called, want vault unlock skipped when no placeholders exist")
+	}
+	if !equalStringSlices(gotCommand, []string{"echo", "hi"}) {
+		t.Fatalf("command = %#v, want %#v", gotCommand, []string{"echo", "hi"})
+	}
+	if !equalStringSlices(gotEnv, []string{"PATH=/usr/bin", "HOME=/tmp/test-home", "TMPDIR=/tmp/runtime", "PORT=3000", "LOG_LEVEL=debug"}) {
+		t.Fatalf("env = %#v, want baseline env plus parsed values", gotEnv)
+	}
+}
+
+func TestRunCmdResolvesKnownPlaceholders(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	createTestVault(t, "vault-passphrase", []vault.Credential{
+		{
+			Name:        "openai",
+			Placeholder: "kvn_aaaaaaaaaaaaaaaaaaaa",
+			Secret:      "sk-openai-secret",
+			CreatedAt:   time.Unix(1700000000, 0).UTC(),
+		},
+	})
+
+	envPath := writeTestEnvFile(t, "OPENAI_API_KEY=kvn_aaaaaaaaaaaaaaaaaaaa\nPORT=3000\n")
+
+	var gotEnv []string
+	reset := stubCLIEnv(t, cliStubOptions{
+		parentEnviron: func() []string {
+			return []string{
+				"PATH=/usr/bin",
+				"HOME=/tmp/test-home",
+			}
+		},
+		promptPassphrase: func(string) (string, error) { return "vault-passphrase", nil },
+		runChildProcess: func(command []string, env []string) (int, error) {
+			gotEnv = append([]string(nil), env...)
+			return 0, nil
+		},
+	})
+	defer reset()
+
+	if got := runCmd([]string{"--env", envPath, "--", "echo", "hi"}); got != 0 {
+		t.Fatalf("runCmd() = %d, want 0", got)
+	}
+
+	if !equalStringSlices(gotEnv, []string{"PATH=/usr/bin", "HOME=/tmp/test-home", "OPENAI_API_KEY=sk-openai-secret", "PORT=3000"}) {
+		t.Fatalf("env = %#v, want resolved secret env", gotEnv)
+	}
+}
+
+func TestRunCmdFailsOnUnknownPlaceholdersBeforeSpawn(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	createTestVault(t, "vault-passphrase", nil)
+
+	envPath := writeTestEnvFile(t, "OPENAI_API_KEY=kvn_aaaaaaaaaaaaaaaaaaaa\n")
+
+	var stderrBuf bytes.Buffer
+	runCalled := false
+	reset := stubCLIEnv(t, cliStubOptions{
+		stderr:           &stderrBuf,
+		promptPassphrase: func(string) (string, error) { return "vault-passphrase", nil },
+		runChildProcess: func(command []string, env []string) (int, error) {
+			runCalled = true
+			return 0, nil
+		},
+	})
+	defer reset()
+
+	if got := runCmd([]string{"--env", envPath, "--", "echo", "hi"}); got != 1 {
+		t.Fatalf("runCmd() = %d, want 1", got)
+	}
+	if runCalled {
+		t.Fatal("runChildProcess() called, want unknown placeholders failure before spawn")
+	}
+	if got := stderrBuf.String(); got != "unknown placeholder(s): kvn_aaaaaaaaaaaaaaaaaaaa\n" {
+		t.Fatalf("stderr = %q, want unknown placeholder error", got)
+	}
+}
+
+func TestRunCmdEmitsWarningsToStderrBeforeSpawn(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	envPath := writeTestEnvFile(t, "OPENAI_API_KEY=sk-live-secret\n")
+
+	var stderrBuf bytes.Buffer
+	reset := stubCLIEnv(t, cliStubOptions{
+		stderr: &stderrBuf,
+		runChildProcess: func(command []string, env []string) (int, error) {
+			return 0, nil
+		},
+	})
+	defer reset()
+
+	if got := runCmd([]string{"--env", envPath, "--", "echo", "hi"}); got != 0 {
+		t.Fatalf("runCmd() = %d, want 0", got)
+	}
+	if got := stderrBuf.String(); got != "warning: OPENAI_API_KEY appears to contain a plaintext secret; use a kenv placeholder instead\n" {
+		t.Fatalf("stderr = %q, want warning only", got)
+	}
+	if strings.Contains(stderrBuf.String(), "sk-live-secret") {
+		t.Fatalf("stderr unexpectedly contains secret: %q", stderrBuf.String())
+	}
+}
+
+func TestRunCmdInheritEnvOverlaysParsedAndResolvedValues(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	createTestVault(t, "vault-passphrase", []vault.Credential{
+		{
+			Name:        "openai",
+			Placeholder: "kvn_aaaaaaaaaaaaaaaaaaaa",
+			Secret:      "sk-openai-secret",
+			CreatedAt:   time.Unix(1700000000, 0).UTC(),
+		},
+	})
+
+	envPath := writeTestEnvFile(t, "OPENAI_API_KEY=kvn_aaaaaaaaaaaaaaaaaaaa\nLOG_LEVEL=debug\n")
+
+	var gotEnv []string
+	reset := stubCLIEnv(t, cliStubOptions{
+		parentEnviron:    func() []string { return []string{"PATH=/usr/bin", "OPENAI_API_KEY=parent-secret", "APP_MODE=prod"} },
+		promptPassphrase: func(string) (string, error) { return "vault-passphrase", nil },
+		runChildProcess: func(command []string, env []string) (int, error) {
+			gotEnv = append([]string(nil), env...)
+			return 0, nil
+		},
+	})
+	defer reset()
+
+	if got := runCmd([]string{"--inherit-env", "--env", envPath, "--", "echo", "hi"}); got != 0 {
+		t.Fatalf("runCmd() = %d, want 0", got)
+	}
+	if !equalStringSlices(gotEnv, []string{"PATH=/usr/bin", "OPENAI_API_KEY=sk-openai-secret", "APP_MODE=prod", "LOG_LEVEL=debug"}) {
+		t.Fatalf("env = %#v, want inherited env with overlays", gotEnv)
+	}
+}
+
+func TestRunCmdFailsWhenPromptRequiresTTYForPlaceholders(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	createTestVault(t, "vault-passphrase", nil)
+
+	envPath := writeTestEnvFile(t, "OPENAI_API_KEY=kvn_aaaaaaaaaaaaaaaaaaaa\n")
+
+	var stderrBuf bytes.Buffer
+	runCalled := false
+	reset := stubCLIEnv(t, cliStubOptions{
+		stderr:           &stderrBuf,
+		promptPassphrase: func(string) (string, error) { return "", vault.ErrPromptRequiresTTY },
+		runChildProcess: func(command []string, env []string) (int, error) {
+			runCalled = true
+			return 0, nil
+		},
+	})
+	defer reset()
+
+	if got := runCmd([]string{"--env", envPath, "--", "echo", "hi"}); got != 1 {
+		t.Fatalf("runCmd() = %d, want 1", got)
+	}
+	if runCalled {
+		t.Fatal("runChildProcess() called, want prompt failure before spawn")
+	}
+	if got := stderrBuf.String(); got != vault.ErrPromptRequiresTTY.Error()+"\n" {
+		t.Fatalf("stderr = %q, want prompt requires tty error", got)
+	}
+}
+
+func writeTestEnvFile(t *testing.T, content string) string {
+	t.Helper()
+
+	path := filepath.Join(t.TempDir(), ".env")
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	return path
+}
+
+func equalStringSlices(got, want []string) bool {
+	return len(got) == len(want) && strings.Join(got, "\x00") == strings.Join(want, "\x00")
 }
