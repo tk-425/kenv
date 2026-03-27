@@ -125,6 +125,22 @@ func TestEncryptVaultCiphertextDiffersFromPlaintext(t *testing.T) {
 	}
 }
 
+func TestMarshalVaultNormalizesNilCredentials(t *testing.T) {
+	vault := Vault{Version: CurrentVersion}
+
+	plaintext, err := marshalVault(vault)
+	if err != nil {
+		t.Fatalf("marshalVault() error = %v", err)
+	}
+
+	if strings.Contains(string(plaintext), `"credentials":null`) {
+		t.Fatalf("marshalVault() produced null credentials: %s", plaintext)
+	}
+	if !strings.Contains(string(plaintext), `"credentials":[]`) {
+		t.Fatalf("marshalVault() did not normalize empty credentials: %s", plaintext)
+	}
+}
+
 func encryptPlaintext(plaintext []byte, passphrase string) ([]byte, error) {
 	recipient, err := newScryptRecipient(passphrase)
 	if err != nil {

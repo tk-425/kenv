@@ -82,7 +82,7 @@ func newScryptIdentity(passphrase string) (*age.ScryptIdentity, error) {
 }
 
 func marshalVault(v Vault) ([]byte, error) {
-	if err := validateVault(v); err != nil {
+	if err := validateVault(&v); err != nil {
 		return nil, err
 	}
 
@@ -100,14 +100,14 @@ func unmarshalVault(plaintext []byte) (Vault, error) {
 		return Vault{}, fmt.Errorf("%w: decode vault JSON: %v", ErrInvalidVaultData, err)
 	}
 
-	if err := validateVault(v); err != nil {
+	if err := validateVault(&v); err != nil {
 		return Vault{}, err
 	}
 
 	return v, nil
 }
 
-func validateVault(v Vault) error {
+func validateVault(v *Vault) error {
 	if v.Version != CurrentVersion {
 		return fmt.Errorf("%w: got version %d", ErrUnsupportedVaultVersion, v.Version)
 	}
