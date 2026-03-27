@@ -133,7 +133,8 @@ func validateVault(v *Vault) error {
 	names := make(map[string]struct{}, len(v.Credentials))
 	placeholders := make(map[string]struct{}, len(v.Credentials))
 	for _, credential := range v.Credentials {
-		if strings.TrimSpace(credential.Name) == "" {
+		trimmedName := strings.TrimSpace(credential.Name)
+		if trimmedName == "" {
 			return fmt.Errorf("%w: empty credential name", ErrInvalidVaultData)
 		}
 		if strings.TrimSpace(credential.Placeholder) == "" {
@@ -142,14 +143,14 @@ func validateVault(v *Vault) error {
 		if !placeholderPattern.MatchString(credential.Placeholder) {
 			return fmt.Errorf("%w: invalid placeholder %q", ErrInvalidVaultData, credential.Placeholder)
 		}
-		if _, exists := names[credential.Name]; exists {
+		if _, exists := names[trimmedName]; exists {
 			return fmt.Errorf("%w: duplicate credential name %q", ErrInvalidVaultData, credential.Name)
 		}
 		if _, exists := placeholders[credential.Placeholder]; exists {
 			return fmt.Errorf("%w: duplicate placeholder %q", ErrInvalidVaultData, credential.Placeholder)
 		}
 
-		names[credential.Name] = struct{}{}
+		names[trimmedName] = struct{}{}
 		placeholders[credential.Placeholder] = struct{}{}
 	}
 
