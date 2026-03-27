@@ -47,7 +47,10 @@ func PromptSecret(prompt string) (string, error) {
 }
 
 func readHiddenInput(prompt string) (string, error) {
-	fd := int(promptInput.Fd())
+	fd, err := promptInputFD()
+	if err != nil {
+		return "", err
+	}
 	if !isTerminal(fd) {
 		return "", ErrPromptRequiresTTY
 	}
@@ -57,12 +60,24 @@ func readHiddenInput(prompt string) (string, error) {
 	}
 
 	valueBytes, err := readPassword(fd)
-	if _, newlineErr := fmt.Fprintln(promptOutput); newlineErr != nil && err == nil {
-		return "", fmt.Errorf("write prompt newline: %w", newlineErr)
-	}
+	_, newlineErr := fmt.Fprintln(promptOutput)
 	if err != nil {
 		return "", fmt.Errorf("read hidden input: %w", err)
 	}
+	if newlineErr != nil {
+		return "", fmt.Errorf("write prompt newline: %w", newlineErr)
+	}
 
 	return string(valueBytes), nil
+}
+
+func promptInputFD() (fd int, err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			fd = 0
+			err = ErrPromptRequiresTTY
+		}
+	}()
+
+	return int(promptInput.Fd()), nil
 }

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"io"
+	"os"
 	"testing"
 )
 
@@ -94,13 +95,38 @@ func TestPromptSecretUsesHiddenInputWithoutLeakingValue(t *testing.T) {
 	}
 }
 
+func TestPromptPassphraseReturnsRequiresTTYWhenInputIsClosed(t *testing.T) {
+	file, err := os.CreateTemp(t.TempDir(), "closed-prompt-input")
+	if err != nil {
+		t.Fatalf("CreateTemp() error = %v", err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+
+	reset := stubPromptEnv(t, false, nil, nil)
+	originalInput := promptInput
+	promptInput = file
+	defer func() {
+		promptInput = originalInput
+		reset()
+	}()
+
+	_, err = PromptPassphrase("Vault passphrase: ")
+	if !errors.Is(err, ErrPromptRequiresTTY) {
+		t.Fatalf("PromptPassphrase() error = %v, want ErrPromptRequiresTTY", err)
+	}
+}
+
 func stubPromptEnv(t *testing.T, tty bool, output io.Writer, passwordReader func(fd int) ([]byte, error)) func() {
 	t.Helper()
 
+	originalInput := promptInput
 	originalOutput := promptOutput
 	originalIsTerminal := isTerminal
 	originalReadPassword := readPassword
 
+	promptInput = os.Stdin
 	promptOutput = io.Discard
 	if output != nil {
 		promptOutput = output
@@ -116,6 +142,7 @@ func stubPromptEnv(t *testing.T, tty bool, output io.Writer, passwordReader func
 	}
 
 	return func() {
+		promptInput = originalInput
 		promptOutput = originalOutput
 		isTerminal = originalIsTerminal
 		readPassword = originalReadPassword
