@@ -78,7 +78,7 @@ With `--inherit-env`, `kenv` starts from the current shell environment first, th
 - `kenv show <env-key>` — show the placeholder for the current project scope
 - `kenv rm <env-key>` — remove a scoped secret
 - `kenv run --env <file> -- <command...>` — resolve placeholders and run a child command
-- `kenv run --inherit-env --env <file> -- <command...>` — do the same, but start from the current shell environment first
+- `kenv run --inherit-env --env <file> -- <command...>` — resolve placeholders and run a child command, first inheriting the current shell environment for compatibility
 - `kenv scope migrate` — migrate local-scope credentials into the current git-backed scope
 - `kenv backup restore` — restore from an automatically created encrypted vault backup
 - `kenv version` — print the current version
