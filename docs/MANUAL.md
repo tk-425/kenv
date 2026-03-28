@@ -109,7 +109,7 @@ make build-dev
 Release-style build with injected version:
 
 ```bash
-make build-release VERSION=0.1.0
+make build-release VERSION=0.1.1
 ```
 
 Default local build:
@@ -123,7 +123,7 @@ make build
 The project rule for this repo is to keep the source version as `dev` and inject the release version at build time. A typical local install flow is:
 
 ```bash
-make build-release VERSION=0.1.0
+make build-release VERSION=0.1.1
 cp ./bin/kenv /usr/local/bin/kenv
 ```
 
@@ -885,9 +885,3 @@ The current placeholder format is:
 ```text
 kvn_[a-z0-9]{20}
 ```
-
-### Related docs
-
-- [`.docs/SCOPED-VAULT-DESIGN.md`](/Users/terrykang/Documents/Programming/+Projects/+CLI/kenv/.docs/SCOPED-VAULT-DESIGN.md)
-- [`.docs/SCOPED-VAULT-PLAN.md`](/Users/terrykang/Documents/Programming/+Projects/+CLI/kenv/.docs/SCOPED-VAULT-PLAN.md)
-- [`.docs/PLAN-v2.md`](/Users/terrykang/Documents/Programming/+Projects/+CLI/kenv/.docs/PLAN-v2.md)
