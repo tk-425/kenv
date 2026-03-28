@@ -22,8 +22,23 @@ func runList(args []string) int {
 		return 1
 	}
 
-	for _, credential := range vault.ListCredentials(v) {
-		fmt.Fprintf(stdout, "%s\t%s\n", credential.Name, credential.Placeholder)
+	scope, err := detectCurrentScope()
+	if err != nil {
+		printCommandError(err)
+		return 1
+	}
+	if err := ensureNoPendingScopeMigration(v, scope); err != nil {
+		printCommandError(err)
+		return 1
+	}
+
+	credentials, err := vault.ListCredentialsInScope(v, scope.ID)
+	if err != nil {
+		printCommandError(err)
+		return 1
+	}
+	for _, credential := range credentials {
+		fmt.Fprintf(stdout, "%s\t%s\t%s\n", credential.ScopeLabel, credential.EnvKey, credential.Placeholder)
 	}
 
 	return 0

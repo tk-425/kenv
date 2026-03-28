@@ -28,6 +28,8 @@ func run(args []string) int {
 		return runRemove(args[1:])
 	case "run":
 		return runCmd(args[1:])
+	case "scope":
+		return runScope(args[1:])
 	case "version":
 		return runVersion(args[1:])
 	case "help", "-h", "--help":
@@ -46,14 +48,15 @@ func printTopLevelUsage() {
 Usage:
   kenv <command> [arguments]
 
-Commands:
-  init          Initialize the local vault
-  add           Add a secret and return its placeholder
-  list          List secret names and placeholders
-  show          Show the placeholder for a secret name
-  rm            Remove a secret from the vault
-  run           Resolve placeholders from an env file and run a command
-  version       Print the kenv version
+	Commands:
+	  init          Initialize the local vault
+	  add           Add a secret and return its placeholder
+	  list          List scoped secret placeholders
+	  show          Show the placeholder for a scoped secret
+	  rm            Remove a scoped secret from the vault
+	  run           Resolve placeholders from an env file and run a command
+	  scope         Manage project scope operations
+	  version       Print the kenv version
 
 Help:
   kenv help

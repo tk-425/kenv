@@ -1,11 +1,13 @@
 package main
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
+	"strings"
 	"time"
 
 	"github.com/tk-425/kenv/internal/vault"
@@ -19,17 +21,24 @@ var (
 	promptPassphraseTwice = vault.PromptPassphraseTwice
 	promptSecretValue     = vault.PromptSecret
 
-	loadVaultCiphertext = vault.LoadCiphertext
-	saveVaultCiphertext = vault.SaveCiphertext
-	encryptVaultData    = vault.EncryptVault
-	decryptVaultData    = vault.DecryptVault
-	parentEnviron       = os.Environ
-	runChildProcess     = execChildProcess
+	loadVaultCiphertext       = vault.LoadCiphertext
+	saveVaultCiphertext       = vault.SaveCiphertext
+	encryptVaultData          = vault.EncryptVault
+	decryptVaultData          = vault.DecryptVault
+	detectScope               = vault.DetectScope
+	parentEnviron             = os.Environ
+	runChildProcess           = execChildProcess
+	currentWorkingDir         = os.Getwd
+	confirmScopeFunc          = confirmScopePrompt
+	confirmScopeMigrationFunc = confirmScopeMigrationPrompt
 
 	now = time.Now
 )
 
-var errVaultAlreadyExists = errors.New("vault already exists")
+var (
+	errVaultAlreadyExists   = errors.New("vault already exists")
+	errScopeMigrationNeeded = errors.New("scope migration required")
+)
 
 func wantsHelp(args []string) bool {
 	for _, arg := range args {
@@ -69,6 +78,62 @@ func saveVault(v vault.Vault, passphrase string) error {
 	return saveVaultCiphertext(ciphertext)
 }
 
+func detectCurrentScope() (vault.Scope, error) {
+	cwd, err := currentWorkingDir()
+	if err != nil {
+		return vault.Scope{}, fmt.Errorf("resolve current directory: %w", err)
+	}
+
+	return detectScope(cwd)
+}
+
+func ensureNoPendingScopeMigration(v vault.Vault, scope vault.Scope) error {
+	if !scope.GitBacked {
+		return nil
+	}
+
+	hasPending, err := vault.HasLocalScopeCredentialsForPath(v, scope.Path)
+	if err != nil {
+		return err
+	}
+	if hasPending {
+		return errScopeMigrationNeeded
+	}
+
+	return nil
+}
+
+func confirmScope(scope vault.Scope) (bool, error) {
+	return confirmScopeFunc(scope)
+}
+
+func confirmScopeMigration(scope vault.Scope, credentials []vault.Credential) (bool, error) {
+	return confirmScopeMigrationFunc(scope, credentials)
+}
+
+func confirmScopePrompt(scope vault.Scope) (bool, error) {
+	return promptYesNo(fmt.Sprintf("Detected project:\n  root: %s\n  scope: %s\n  label: %s\n\nUse this project scope? [y/N] ", scope.Path, scope.ID, scope.Label))
+}
+
+func confirmScopeMigrationPrompt(scope vault.Scope, credentials []vault.Credential) (bool, error) {
+	return promptYesNo(fmt.Sprintf("Detected %d credential(s) to migrate into git scope %s.\nProject root: %s\n\nProceed with `kenv scope migrate`? [y/N] ", len(credentials), scope.ID, scope.Path))
+}
+
+func promptYesNo(prompt string) (bool, error) {
+	if _, err := fmt.Fprint(stderr, prompt); err != nil {
+		return false, fmt.Errorf("write prompt: %w", err)
+	}
+
+	reader := bufio.NewReader(os.Stdin)
+	response, err := reader.ReadString('\n')
+	if err != nil {
+		return false, fmt.Errorf("read prompt response: %w", err)
+	}
+
+	answer := strings.ToLower(strings.TrimSpace(response))
+	return answer == "y" || answer == "yes", nil
+}
+
 func ensureVaultDoesNotExist() error {
 	_, err := loadVaultCiphertext()
 	if errors.Is(err, vault.ErrVaultMissing) {
@@ -103,6 +168,10 @@ func formatCommandError(err error) string {
 		return vault.ErrPromptRequiresTTY.Error()
 	case errors.Is(err, vault.ErrPassphraseMismatch):
 		return vault.ErrPassphraseMismatch.Error()
+	case errors.Is(err, vault.ErrScopeMigrationConflict):
+		return err.Error()
+	case errors.Is(err, errScopeMigrationNeeded):
+		return "this project has pending local-to-git scope migration; run `kenv scope migrate` first"
 	default:
 		return err.Error()
 	}

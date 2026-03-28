@@ -22,13 +22,32 @@ func runAdd(args []string) int {
 		return 1
 	}
 
+	scope, err := detectCurrentScope()
+	if err != nil {
+		printCommandError(err)
+		return 1
+	}
+	if err := ensureNoPendingScopeMigration(v, scope); err != nil {
+		printCommandError(err)
+		return 1
+	}
+	confirmed, err := confirmScope(scope)
+	if err != nil {
+		printCommandError(err)
+		return 1
+	}
+	if !confirmed {
+		fmt.Fprintln(stdout, "add canceled")
+		return 1
+	}
+
 	secret, err := promptSecretValue("Secret value: ")
 	if err != nil {
 		printCommandError(err)
 		return 1
 	}
 
-	credential, err := vault.AddCredential(&v, args[0], secret, now())
+	credential, err := vault.AddScopedCredential(&v, scope, args[0], secret, now())
 	if err != nil {
 		printCommandError(err)
 		return 1
@@ -45,5 +64,5 @@ func runAdd(args []string) int {
 
 func printAddUsage() {
 	fmt.Fprintln(stderr, `Usage:
-  kenv add <name>`)
+  kenv add <env-key>`)
 }

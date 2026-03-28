@@ -5,25 +5,14 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-	"time"
 )
 
 func TestResolvePlaceholdersReturnsResolvedMapping(t *testing.T) {
 	v := Vault{
 		Version: CurrentVersion,
 		Credentials: []Credential{
-			{
-				Name:        "openai",
-				Placeholder: "kvn_aaaaaaaaaaaaaaaaaaaa",
-				Secret:      "sk-openai",
-				CreatedAt:   time.Date(2026, time.March, 27, 10, 0, 0, 0, time.UTC),
-			},
-			{
-				Name:        "anthropic",
-				Placeholder: "kvn_bbbbbbbbbbbbbbbbbbbb",
-				Secret:      "sk-anthropic",
-				CreatedAt:   time.Date(2026, time.March, 27, 11, 0, 0, 0, time.UTC),
-			},
+			testCredential("github.com/tk-425/kenv", "kenv", "/tmp/kenv", "OPENAI_API_KEY", "kvn_aaaaaaaaaaaaaaaaaaaa", "sk-openai"),
+			testCredential("github.com/tk-425/kenv", "kenv", "/tmp/kenv", "ANTHROPIC_API_KEY", "kvn_bbbbbbbbbbbbbbbbbbbb", "sk-anthropic"),
 		},
 	}
 
@@ -59,12 +48,7 @@ func TestResolvePlaceholdersReturnsOrderedDeduplicatedUnknowns(t *testing.T) {
 	v := Vault{
 		Version: CurrentVersion,
 		Credentials: []Credential{
-			{
-				Name:        "openai",
-				Placeholder: "kvn_aaaaaaaaaaaaaaaaaaaa",
-				Secret:      "sk-openai",
-				CreatedAt:   time.Date(2026, time.March, 27, 10, 0, 0, 0, time.UTC),
-			},
+			testCredential("github.com/tk-425/kenv", "kenv", "/tmp/kenv", "OPENAI_API_KEY", "kvn_aaaaaaaaaaaaaaaaaaaa", "sk-openai"),
 		},
 	}
 
@@ -102,12 +86,7 @@ func TestResolvePlaceholdersReturnsNilMapOnUnknowns(t *testing.T) {
 	v := Vault{
 		Version: CurrentVersion,
 		Credentials: []Credential{
-			{
-				Name:        "openai",
-				Placeholder: "kvn_aaaaaaaaaaaaaaaaaaaa",
-				Secret:      "sk-openai",
-				CreatedAt:   time.Date(2026, time.March, 27, 10, 0, 0, 0, time.UTC),
-			},
+			testCredential("github.com/tk-425/kenv", "kenv", "/tmp/kenv", "OPENAI_API_KEY", "kvn_aaaaaaaaaaaaaaaaaaaa", "sk-openai"),
 		},
 	}
 

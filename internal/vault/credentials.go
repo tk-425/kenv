@@ -21,19 +21,25 @@ var (
 	ErrInvalidCredentialName          = errors.New("invalid credential name")
 	ErrPlaceholderGenerationFailed    = errors.New("placeholder generation failed")
 	ErrPlaceholderGenerationExhausted = errors.New("placeholder generation exhausted")
+	ErrScopeMigrationConflict         = errors.New("scope migration conflict")
 )
 
 const placeholderAlphabet = "abcdefghijklmnopqrstuvwxyz0123456789"
 
 var placeholderRandomReader io.Reader = rand.Reader
 
-func AddCredential(v *Vault, name, secret string, now time.Time) (Credential, error) {
-	normalizedName, err := normalizeCredentialName(name)
+func AddScopedCredential(v *Vault, scope Scope, envKey, secret string, now time.Time) (Credential, error) {
+	normalizedScope, err := normalizeScope(scope)
 	if err != nil {
 		return Credential{}, err
 	}
 
-	if _, err := GetCredentialByName(*v, normalizedName); err == nil {
+	normalizedKey, err := normalizeCredentialName(envKey)
+	if err != nil {
+		return Credential{}, err
+	}
+
+	if _, err := GetCredentialByScopeAndEnvKey(*v, normalizedScope.ID, normalizedKey); err == nil {
 		return Credential{}, ErrCredentialExists
 	} else if !errors.Is(err, ErrCredentialNotFound) {
 		return Credential{}, err
@@ -45,7 +51,10 @@ func AddCredential(v *Vault, name, secret string, now time.Time) (Credential, er
 	}
 
 	credential := Credential{
-		Name:        normalizedName,
+		ScopeID:     normalizedScope.ID,
+		ScopeLabel:  normalizedScope.Label,
+		ScopePath:   normalizedScope.Path,
+		EnvKey:      normalizedKey,
 		Placeholder: placeholder,
 		Secret:      secret,
 		CreatedAt:   now,
@@ -55,27 +64,44 @@ func AddCredential(v *Vault, name, secret string, now time.Time) (Credential, er
 	return credential, nil
 }
 
-func ListCredentials(v Vault) []CredentialMetadata {
+func ListCredentialsInScope(v Vault, scopeID string) ([]CredentialMetadata, error) {
+	normalizedScopeID, err := normalizeCredentialName(scopeID)
+	if err != nil {
+		return nil, err
+	}
+
 	credentials := make([]CredentialMetadata, 0, len(v.Credentials))
 	for _, credential := range v.Credentials {
+		if credential.ScopeID != normalizedScopeID {
+			continue
+		}
+
 		credentials = append(credentials, CredentialMetadata{
-			Name:        credential.Name,
+			ScopeID:     credential.ScopeID,
+			ScopeLabel:  credential.ScopeLabel,
+			ScopePath:   credential.ScopePath,
+			EnvKey:      credential.EnvKey,
 			Placeholder: credential.Placeholder,
 			CreatedAt:   credential.CreatedAt,
 		})
 	}
 
-	return credentials
+	return credentials, nil
 }
 
-func GetCredentialByName(v Vault, name string) (Credential, error) {
-	normalizedName, err := normalizeCredentialName(name)
+func GetCredentialByScopeAndEnvKey(v Vault, scopeID, envKey string) (Credential, error) {
+	normalizedScopeID, err := normalizeCredentialName(scopeID)
+	if err != nil {
+		return Credential{}, err
+	}
+
+	normalizedKey, err := normalizeCredentialName(envKey)
 	if err != nil {
 		return Credential{}, err
 	}
 
 	for _, credential := range v.Credentials {
-		if credential.Name == normalizedName {
+		if credential.ScopeID == normalizedScopeID && credential.EnvKey == normalizedKey {
 			return credential, nil
 		}
 	}
@@ -83,14 +109,19 @@ func GetCredentialByName(v Vault, name string) (Credential, error) {
 	return Credential{}, ErrCredentialNotFound
 }
 
-func RemoveCredential(v *Vault, name string) error {
-	normalizedName, err := normalizeCredentialName(name)
+func RemoveCredentialByScopeAndEnvKey(v *Vault, scopeID, envKey string) error {
+	normalizedScopeID, err := normalizeCredentialName(scopeID)
+	if err != nil {
+		return err
+	}
+
+	normalizedKey, err := normalizeCredentialName(envKey)
 	if err != nil {
 		return err
 	}
 
 	for i, credential := range v.Credentials {
-		if credential.Name != normalizedName {
+		if credential.ScopeID != normalizedScopeID || credential.EnvKey != normalizedKey {
 			continue
 		}
 
@@ -99,6 +130,104 @@ func RemoveCredential(v *Vault, name string) error {
 	}
 
 	return ErrCredentialNotFound
+}
+
+func FindLocalScopeCredentialsByPath(v Vault, scopePath string) ([]Credential, error) {
+	normalizedPath, err := normalizeCredentialName(scopePath)
+	if err != nil {
+		return nil, err
+	}
+
+	matches := make([]Credential, 0)
+	for _, credential := range v.Credentials {
+		if credential.ScopePath != normalizedPath {
+			continue
+		}
+		if !strings.HasPrefix(credential.ScopeID, "local:") {
+			continue
+		}
+
+		matches = append(matches, credential)
+	}
+
+	return matches, nil
+}
+
+func HasLocalScopeCredentialsForPath(v Vault, scopePath string) (bool, error) {
+	matches, err := FindLocalScopeCredentialsByPath(v, scopePath)
+	if err != nil {
+		return false, err
+	}
+
+	return len(matches) > 0, nil
+}
+
+func MigrateLocalScopeToGitScope(v *Vault, scope Scope) error {
+	normalizedScope, err := normalizeScope(scope)
+	if err != nil {
+		return err
+	}
+	if !normalizedScope.GitBacked {
+		return fmt.Errorf("%w: target scope must be git-backed", ErrScopeMigrationConflict)
+	}
+
+	localCredentials, err := FindLocalScopeCredentialsByPath(*v, normalizedScope.Path)
+	if err != nil {
+		return err
+	}
+
+	conflicts := make([]string, 0)
+	for _, credential := range localCredentials {
+		if _, err := GetCredentialByScopeAndEnvKey(*v, normalizedScope.ID, credential.EnvKey); err == nil {
+			conflicts = append(conflicts, credential.EnvKey)
+			continue
+		} else if !errors.Is(err, ErrCredentialNotFound) {
+			return err
+		}
+	}
+
+	if len(conflicts) > 0 {
+		return fmt.Errorf("%w: %s", ErrScopeMigrationConflict, strings.Join(conflicts, ", "))
+	}
+
+	for i, credential := range v.Credentials {
+		if credential.ScopePath != normalizedScope.Path {
+			continue
+		}
+		if !strings.HasPrefix(credential.ScopeID, "local:") {
+			continue
+		}
+
+		v.Credentials[i].ScopeID = normalizedScope.ID
+		v.Credentials[i].ScopeLabel = normalizedScope.Label
+		v.Credentials[i].ScopePath = normalizedScope.Path
+	}
+
+	return nil
+}
+
+func normalizeScope(scope Scope) (Scope, error) {
+	id, err := normalizeCredentialName(scope.ID)
+	if err != nil {
+		return Scope{}, err
+	}
+
+	label, err := normalizeCredentialName(scope.Label)
+	if err != nil {
+		return Scope{}, err
+	}
+
+	path, err := normalizeCredentialName(scope.Path)
+	if err != nil {
+		return Scope{}, err
+	}
+
+	return Scope{
+		ID:        id,
+		Label:     label,
+		Path:      path,
+		GitBacked: scope.GitBacked,
+	}, nil
 }
 
 func normalizeCredentialName(name string) (string, error) {

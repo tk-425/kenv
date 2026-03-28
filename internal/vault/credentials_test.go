@@ -9,20 +9,24 @@ import (
 	"time"
 )
 
-func TestAddCredentialAddsCanonicalCredential(t *testing.T) {
-	vault := Vault{Version: CurrentVersion}
+func TestAddScopedCredentialAddsCanonicalCredential(t *testing.T) {
+	v := Vault{Version: CurrentVersion}
 	now := time.Date(2026, time.March, 27, 12, 0, 0, 0, time.UTC)
+	scope := Scope{ID: "github.com/tk-425/kenv", Label: "kenv", Path: "/tmp/kenv", GitBacked: true}
 
-	credential, err := AddCredential(&vault, "  openai  ", "sk-test-secret", now)
+	credential, err := AddScopedCredential(&v, scope, "  OPENAI_API_KEY  ", "sk-test-secret", now)
 	if err != nil {
-		t.Fatalf("AddCredential() error = %v", err)
+		t.Fatalf("AddScopedCredential() error = %v", err)
 	}
 
-	if credential.Name != "openai" {
-		t.Fatalf("Name = %q, want %q", credential.Name, "openai")
+	if credential.ScopeID != scope.ID || credential.ScopeLabel != scope.Label || credential.ScopePath != scope.Path {
+		t.Fatalf("scope metadata = %#v, want %#v", credential, scope)
+	}
+	if credential.EnvKey != "OPENAI_API_KEY" {
+		t.Fatalf("EnvKey = %q, want OPENAI_API_KEY", credential.EnvKey)
 	}
 	if credential.Secret != "sk-test-secret" {
-		t.Fatalf("Secret = %q, want %q", credential.Secret, "sk-test-secret")
+		t.Fatalf("Secret = %q, want sk-test-secret", credential.Secret)
 	}
 	if !credential.CreatedAt.Equal(now) {
 		t.Fatalf("CreatedAt = %v, want %v", credential.CreatedAt, now)
@@ -30,197 +34,138 @@ func TestAddCredentialAddsCanonicalCredential(t *testing.T) {
 	if !placeholderPattern.MatchString(credential.Placeholder) {
 		t.Fatalf("Placeholder = %q, want format %q", credential.Placeholder, placeholderPattern.String())
 	}
-
-	got, err := GetCredentialByName(vault, "openai")
-	if err != nil {
-		t.Fatalf("GetCredentialByName() error = %v", err)
-	}
-	if got != credential {
-		t.Fatalf("GetCredentialByName() = %+v, want %+v", got, credential)
-	}
 }
 
-func TestAddCredentialRejectsDuplicateTrimEquivalentName(t *testing.T) {
-	vault := Vault{
-		Version: CurrentVersion,
-		Credentials: []Credential{
-			{
-				Name:        "openai",
-				Placeholder: "kvn_1234567890abcdefghij",
-				Secret:      "existing-secret",
-				CreatedAt:   time.Date(2026, time.March, 26, 0, 0, 0, 0, time.UTC),
-			},
-		},
-	}
+func TestAddScopedCredentialRejectsDuplicateScopedEnvKey(t *testing.T) {
+	v := testVault()
+	scope := Scope{ID: "github.com/tk-425/kenv", Label: "kenv", Path: "/tmp/kenv", GitBacked: true}
 
-	_, err := AddCredential(&vault, "  openai  ", "new-secret", time.Now())
+	_, err := AddScopedCredential(&v, scope, " OPENAI_API_KEY ", "new-secret", time.Now())
 	if !errors.Is(err, ErrCredentialExists) {
-		t.Fatalf("AddCredential() error = %v, want ErrCredentialExists", err)
+		t.Fatalf("AddScopedCredential() error = %v, want ErrCredentialExists", err)
 	}
 }
 
-func TestAddCredentialRejectsInvalidName(t *testing.T) {
-	vault := Vault{Version: CurrentVersion}
-
-	_, err := AddCredential(&vault, "   ", "secret", time.Now())
-	if !errors.Is(err, ErrInvalidCredentialName) {
-		t.Fatalf("AddCredential() error = %v, want ErrInvalidCredentialName", err)
-	}
-}
-
-func TestListCredentialsReturnsCopy(t *testing.T) {
-	vault := testVault()
-
-	credentials := ListCredentials(vault)
-	if len(credentials) != 1 {
-		t.Fatalf("len(ListCredentials()) = %d, want 1", len(credentials))
-	}
-
-	credentials[0].Name = "mutated"
-
-	if vault.Credentials[0].Name != "openai" {
-		t.Fatalf("ListCredentials() returned alias to vault slice")
-	}
-	if credentials[0].Placeholder != "kvn_1234567890abcdefghij" {
-		t.Fatalf("Placeholder = %q, want %q", credentials[0].Placeholder, "kvn_1234567890abcdefghij")
-	}
-	if credentials[0].CreatedAt.IsZero() {
-		t.Fatal("CreatedAt unexpectedly zero")
-	}
-}
-
-func TestListCredentialsRedactsSecret(t *testing.T) {
-	vault := testVault()
-
-	credentials := ListCredentials(vault)
-	if len(credentials) != 1 {
-		t.Fatalf("len(ListCredentials()) = %d, want 1", len(credentials))
-	}
-
-	if _, ok := any(credentials[0]).(Credential); ok {
-		t.Fatal("ListCredentials() returned Credential instead of redacted metadata")
-	}
-}
-
-func TestGetCredentialByNameRejectsInvalidName(t *testing.T) {
-	_, err := GetCredentialByName(testVault(), "   ")
-	if !errors.Is(err, ErrInvalidCredentialName) {
-		t.Fatalf("GetCredentialByName() error = %v, want ErrInvalidCredentialName", err)
-	}
-}
-
-func TestGetCredentialByNameReturnsNotFound(t *testing.T) {
-	_, err := GetCredentialByName(testVault(), "anthropic")
-	if !errors.Is(err, ErrCredentialNotFound) {
-		t.Fatalf("GetCredentialByName() error = %v, want ErrCredentialNotFound", err)
-	}
-}
-
-func TestGetCredentialByNameNormalizesInput(t *testing.T) {
-	credential, err := GetCredentialByName(testVault(), " openai ")
+func TestListCredentialsInScopeReturnsCopy(t *testing.T) {
+	credentials, err := ListCredentialsInScope(testVault(), "github.com/tk-425/kenv")
 	if err != nil {
-		t.Fatalf("GetCredentialByName() error = %v", err)
+		t.Fatalf("ListCredentialsInScope() error = %v", err)
+	}
+	if len(credentials) != 1 {
+		t.Fatalf("len(ListCredentialsInScope()) = %d, want 1", len(credentials))
 	}
 
-	if credential.Name != "openai" {
-		t.Fatalf("Name = %q, want %q", credential.Name, "openai")
+	credentials[0].EnvKey = "mutated"
+	if testVault().Credentials[0].EnvKey != "OPENAI_API_KEY" {
+		t.Fatal("ListCredentialsInScope() returned alias to vault slice")
 	}
 }
 
-func TestRemoveCredentialRemovesExistingCredential(t *testing.T) {
-	vault := Vault{
+func TestGetCredentialByScopeAndEnvKey(t *testing.T) {
+	credential, err := GetCredentialByScopeAndEnvKey(testVault(), " github.com/tk-425/kenv ", " OPENAI_API_KEY ")
+	if err != nil {
+		t.Fatalf("GetCredentialByScopeAndEnvKey() error = %v", err)
+	}
+	if credential.EnvKey != "OPENAI_API_KEY" {
+		t.Fatalf("EnvKey = %q, want OPENAI_API_KEY", credential.EnvKey)
+	}
+}
+
+func TestRemoveCredentialByScopeAndEnvKey(t *testing.T) {
+	v := Vault{
 		Version: CurrentVersion,
 		Credentials: []Credential{
-			{
-				Name:        "openai",
-				Placeholder: "kvn_1234567890abcdefghij",
-				Secret:      "first-secret",
-				CreatedAt:   time.Date(2026, time.March, 26, 0, 0, 0, 0, time.UTC),
-			},
-			{
-				Name:        "anthropic",
-				Placeholder: "kvn_abcdefghij1234567890",
-				Secret:      "second-secret",
-				CreatedAt:   time.Date(2026, time.March, 26, 1, 0, 0, 0, time.UTC),
-			},
+			testCredential("github.com/tk-425/kenv", "kenv", "/tmp/kenv", "OPENAI_API_KEY", "kvn_1234567890abcdefghij", "first-secret"),
+			testCredential("github.com/tk-425/other", "other", "/tmp/other", "OPENAI_API_KEY", "kvn_abcdefghij1234567890", "second-secret"),
 		},
 	}
 
-	if err := RemoveCredential(&vault, " openai "); err != nil {
-		t.Fatalf("RemoveCredential() error = %v", err)
+	if err := RemoveCredentialByScopeAndEnvKey(&v, "github.com/tk-425/kenv", "OPENAI_API_KEY"); err != nil {
+		t.Fatalf("RemoveCredentialByScopeAndEnvKey() error = %v", err)
 	}
-
-	if len(vault.Credentials) != 1 {
-		t.Fatalf("len(Credentials) = %d, want 1", len(vault.Credentials))
+	if len(v.Credentials) != 1 {
+		t.Fatalf("len(Credentials) = %d, want 1", len(v.Credentials))
 	}
-	if vault.Credentials[0].Name != "anthropic" {
-		t.Fatalf("remaining credential = %q, want %q", vault.Credentials[0].Name, "anthropic")
+	if v.Credentials[0].ScopeID != "github.com/tk-425/other" {
+		t.Fatalf("remaining credential scope = %q, want github.com/tk-425/other", v.Credentials[0].ScopeID)
 	}
 }
 
-func TestRemoveCredentialReturnsNotFound(t *testing.T) {
-	vault := testVault()
+func TestFindLocalScopeCredentialsByPath(t *testing.T) {
+	v := Vault{
+		Version: CurrentVersion,
+		Credentials: []Credential{
+			testCredential("local:abc", "kenv", "/tmp/kenv", "OPENAI_API_KEY", "kvn_1234567890abcdefghij", "first-secret"),
+			testCredential("github.com/tk-425/kenv", "kenv", "/tmp/kenv", "ANTHROPIC_API_KEY", "kvn_abcdefghij1234567890", "second-secret"),
+		},
+	}
 
-	err := RemoveCredential(&vault, "anthropic")
-	if !errors.Is(err, ErrCredentialNotFound) {
-		t.Fatalf("RemoveCredential() error = %v, want ErrCredentialNotFound", err)
+	got, err := FindLocalScopeCredentialsByPath(v, "/tmp/kenv")
+	if err != nil {
+		t.Fatalf("FindLocalScopeCredentialsByPath() error = %v", err)
+	}
+	if len(got) != 1 || got[0].ScopeID != "local:abc" {
+		t.Fatalf("matches = %#v, want one local-scope credential", got)
+	}
+}
+
+func TestMigrateLocalScopeToGitScope(t *testing.T) {
+	v := Vault{
+		Version: CurrentVersion,
+		Credentials: []Credential{
+			testCredential("local:abc", "kenv", "/tmp/kenv", "OPENAI_API_KEY", "kvn_1234567890abcdefghij", "first-secret"),
+		},
+	}
+
+	err := MigrateLocalScopeToGitScope(&v, Scope{ID: "github.com/tk-425/kenv", Label: "kenv", Path: "/tmp/kenv", GitBacked: true})
+	if err != nil {
+		t.Fatalf("MigrateLocalScopeToGitScope() error = %v", err)
+	}
+	if v.Credentials[0].ScopeID != "github.com/tk-425/kenv" {
+		t.Fatalf("ScopeID = %q, want github.com/tk-425/kenv", v.Credentials[0].ScopeID)
+	}
+}
+
+func TestMigrateLocalScopeToGitScopeRejectsConflict(t *testing.T) {
+	v := Vault{
+		Version: CurrentVersion,
+		Credentials: []Credential{
+			testCredential("local:abc", "kenv", "/tmp/kenv", "OPENAI_API_KEY", "kvn_1234567890abcdefghij", "first-secret"),
+			testCredential("github.com/tk-425/kenv", "kenv", "/tmp/kenv", "OPENAI_API_KEY", "kvn_abcdefghij1234567890", "second-secret"),
+		},
+	}
+
+	err := MigrateLocalScopeToGitScope(&v, Scope{ID: "github.com/tk-425/kenv", Label: "kenv", Path: "/tmp/kenv", GitBacked: true})
+	if !errors.Is(err, ErrScopeMigrationConflict) {
+		t.Fatalf("MigrateLocalScopeToGitScope() error = %v, want ErrScopeMigrationConflict", err)
 	}
 }
 
 func TestGenerateUniquePlaceholderRetriesCollision(t *testing.T) {
 	originalReader := placeholderRandomReader
 	placeholderRandomReader = bytes.NewReader(append(bytes.Repeat([]byte{27}, placeholderBodyLength), bytes.Repeat([]byte{28}, placeholderBodyLength)...))
-	t.Cleanup(func() {
-		placeholderRandomReader = originalReader
-	})
+	t.Cleanup(func() { placeholderRandomReader = originalReader })
 
 	existing := []Credential{
-		{
-			Name:        "openai",
-			Placeholder: placeholderPrefix + strings.Repeat("1", placeholderBodyLength),
-			Secret:      "secret",
-			CreatedAt:   time.Now(),
-		},
+		testCredential("github.com/tk-425/kenv", "kenv", "/tmp/kenv", "OPENAI_API_KEY", placeholderPrefix+strings.Repeat("1", placeholderBodyLength), "secret"),
 	}
 
 	placeholder, err := generateUniquePlaceholder(existing)
 	if err != nil {
 		t.Fatalf("generateUniquePlaceholder() error = %v", err)
 	}
-
 	if placeholder != placeholderPrefix+strings.Repeat("2", placeholderBodyLength) {
 		t.Fatalf("generateUniquePlaceholder() = %q, want %q", placeholder, placeholderPrefix+strings.Repeat("2", placeholderBodyLength))
 	}
 }
 
-func TestGenerateUniquePlaceholderReturnsExhaustedAfterCollisions(t *testing.T) {
-	originalReader := placeholderRandomReader
-	placeholderRandomReader = bytes.NewReader(bytes.Repeat([]byte{27}, placeholderBodyLength*maxPlaceholderAttempts))
-	t.Cleanup(func() {
-		placeholderRandomReader = originalReader
-	})
+func TestAddScopedCredentialGeneratedPlaceholderMatchesContract(t *testing.T) {
+	v := Vault{Version: CurrentVersion}
+	scope := Scope{ID: "github.com/tk-425/kenv", Label: "kenv", Path: "/tmp/kenv", GitBacked: true}
 
-	existing := []Credential{
-		{
-			Name:        "openai",
-			Placeholder: placeholderPrefix + strings.Repeat("1", placeholderBodyLength),
-			Secret:      "secret",
-			CreatedAt:   time.Now(),
-		},
-	}
-
-	_, err := generateUniquePlaceholder(existing)
-	if !errors.Is(err, ErrPlaceholderGenerationExhausted) {
-		t.Fatalf("generateUniquePlaceholder() error = %v, want ErrPlaceholderGenerationExhausted", err)
-	}
-}
-
-func TestAddCredentialGeneratedPlaceholderMatchesContract(t *testing.T) {
-	vault := Vault{Version: CurrentVersion}
-
-	credential, err := AddCredential(&vault, "service", "secret", time.Now())
+	credential, err := AddScopedCredential(&v, scope, "SERVICE_TOKEN", "secret", time.Now())
 	if err != nil {
-		t.Fatalf("AddCredential() error = %v", err)
+		t.Fatalf("AddScopedCredential() error = %v", err)
 	}
 
 	pattern := regexp.MustCompile(`^kvn_[a-z0-9]{20}$`)

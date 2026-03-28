@@ -22,7 +22,26 @@ func runRemove(args []string) int {
 		return 1
 	}
 
-	if err := vault.RemoveCredential(&v, args[0]); err != nil {
+	scope, err := detectCurrentScope()
+	if err != nil {
+		printCommandError(err)
+		return 1
+	}
+	if err := ensureNoPendingScopeMigration(v, scope); err != nil {
+		printCommandError(err)
+		return 1
+	}
+	confirmed, err := confirmScope(scope)
+	if err != nil {
+		printCommandError(err)
+		return 1
+	}
+	if !confirmed {
+		fmt.Fprintln(stdout, "remove canceled")
+		return 1
+	}
+
+	if err := vault.RemoveCredentialByScopeAndEnvKey(&v, scope.ID, args[0]); err != nil {
 		printCommandError(err)
 		return 1
 	}
@@ -38,5 +57,5 @@ func runRemove(args []string) int {
 
 func printRemoveUsage() {
 	fmt.Fprintln(stderr, `Usage:
-  kenv rm <name>`)
+  kenv rm <env-key>`)
 }

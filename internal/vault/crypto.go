@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"regexp"
-	"strings"
 
 	"filippo.io/age"
 )
@@ -134,27 +133,46 @@ func validateVault(v *Vault) error {
 		v.Credentials = []Credential{}
 	}
 
-	names := make(map[string]struct{}, len(v.Credentials))
+	scopedKeys := make(map[string]struct{}, len(v.Credentials))
 	placeholders := make(map[string]struct{}, len(v.Credentials))
 	for _, credential := range v.Credentials {
-		trimmedName := strings.TrimSpace(credential.Name)
-		if trimmedName == "" {
-			return fmt.Errorf("%w: empty credential name", ErrInvalidVaultData)
+		scopeID, err := normalizeCredentialName(credential.ScopeID)
+		if err != nil {
+			return fmt.Errorf("%w: empty credential scope_id", ErrInvalidVaultData)
 		}
-		if strings.TrimSpace(credential.Placeholder) == "" {
+		scopeLabel, err := normalizeCredentialName(credential.ScopeLabel)
+		if err != nil {
+			return fmt.Errorf("%w: empty credential scope_label", ErrInvalidVaultData)
+		}
+		scopePath, err := normalizeCredentialName(credential.ScopePath)
+		if err != nil {
+			return fmt.Errorf("%w: empty credential scope_path", ErrInvalidVaultData)
+		}
+		envKey, err := normalizeCredentialName(credential.EnvKey)
+		if err != nil {
+			return fmt.Errorf("%w: empty credential env_key", ErrInvalidVaultData)
+		}
+		if _, err := normalizeCredentialName(credential.Placeholder); err != nil {
 			return fmt.Errorf("%w: empty credential placeholder", ErrInvalidVaultData)
 		}
 		if !placeholderPattern.MatchString(credential.Placeholder) {
 			return fmt.Errorf("%w: invalid placeholder %q", ErrInvalidVaultData, credential.Placeholder)
 		}
-		if _, exists := names[trimmedName]; exists {
-			return fmt.Errorf("%w: duplicate credential name %q", ErrInvalidVaultData, credential.Name)
+
+		scopedKey := scopeID + "\x00" + envKey
+		if _, exists := scopedKeys[scopedKey]; exists {
+			return fmt.Errorf("%w: duplicate scoped credential (%q, %q)", ErrInvalidVaultData, scopeID, envKey)
 		}
 		if _, exists := placeholders[credential.Placeholder]; exists {
 			return fmt.Errorf("%w: duplicate placeholder %q", ErrInvalidVaultData, credential.Placeholder)
 		}
 
-		names[trimmedName] = struct{}{}
+		credential.ScopeID = scopeID
+		credential.ScopeLabel = scopeLabel
+		credential.ScopePath = scopePath
+		credential.EnvKey = envKey
+
+		scopedKeys[scopedKey] = struct{}{}
 		placeholders[credential.Placeholder] = struct{}{}
 	}
 
