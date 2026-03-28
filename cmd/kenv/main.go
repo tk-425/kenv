@@ -30,6 +30,8 @@ func run(args []string) int {
 		return runCmd(args[1:])
 	case "scope":
 		return runScope(args[1:])
+	case "backup":
+		return runBackup(args[1:])
 	case "version":
 		return runVersion(args[1:])
 	case "help", "-h", "--help":
@@ -56,6 +58,7 @@ Usage:
 	  rm            Remove a scoped secret from the vault
 	  run           Resolve placeholders from an env file and run a command
 	  scope         Manage project scope operations
+	  backup        Restore an automatically created vault backup
 	  version       Print the kenv version
 
 Help:

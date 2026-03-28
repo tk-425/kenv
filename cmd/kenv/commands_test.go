@@ -257,6 +257,80 @@ func TestRunScopeMigrateMigratesMatchingLocalScope(t *testing.T) {
 	}
 }
 
+func TestRunBackupRestoreRestoresSelectedSnapshot(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	firstCiphertext, err := vault.EncryptVault(vault.Vault{Version: vault.CurrentVersion, Credentials: []vault.Credential{}}, "vault-passphrase")
+	if err != nil {
+		t.Fatalf("EncryptVault(first) error = %v", err)
+	}
+	secondCiphertext, err := vault.EncryptVault(vault.Vault{
+		Version: vault.CurrentVersion,
+		Credentials: []vault.Credential{
+			testCredential("github.com/tk-425/kenv", "kenv", "/tmp/kenv", "OPENAI_API_KEY", "kvn_aaaaaaaaaaaaaaaaaaaa", "sk-secret"),
+		},
+	}, "vault-passphrase")
+	if err != nil {
+		t.Fatalf("EncryptVault(second) error = %v", err)
+	}
+	if err := vault.SaveCiphertext(firstCiphertext); err != nil {
+		t.Fatalf("SaveCiphertext(first) error = %v", err)
+	}
+	if err := vault.SaveCiphertext(secondCiphertext); err != nil {
+		t.Fatalf("SaveCiphertext(second) error = %v", err)
+	}
+	snapshots, err := vault.ListBackupSnapshots()
+	if err != nil {
+		t.Fatalf("ListBackupSnapshots() error = %v", err)
+	}
+	var target vault.BackupSnapshot
+	for _, snapshot := range snapshots {
+		if snapshot.Kind == "post" && !snapshot.Recommended {
+			target = snapshot
+			break
+		}
+	}
+	if target.Name == "" {
+		t.Fatal("expected older post snapshot")
+	}
+
+	var stdoutBuf bytes.Buffer
+	reset := stubCLIEnv(t, cliStubOptions{
+		stdout:                &stdoutBuf,
+		promptPassphrase:      func(string) (string, error) { return "vault-passphrase", nil },
+		promptBackupSelection: func([]vault.BackupSnapshot) (vault.BackupSnapshot, error) { return target, nil },
+	})
+	defer reset()
+
+	if got := runBackupRestore(nil); got != 0 {
+		t.Fatalf("runBackupRestore() = %d, want 0", got)
+	}
+	if got := stdoutBuf.String(); got != "restored "+target.Name+"\n" {
+		t.Fatalf("stdout = %q, want restore output", got)
+	}
+	decrypted := decryptTestVault(t, "vault-passphrase")
+	if len(decrypted.Credentials) != 0 {
+		t.Fatalf("len(credentials) = %d, want 0", len(decrypted.Credentials))
+	}
+}
+
+func TestRunBackupRestoreFailsWhenNoBackupsExist(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	var stderrBuf bytes.Buffer
+	reset := stubCLIEnv(t, cliStubOptions{
+		stderr: &stderrBuf,
+	})
+	defer reset()
+
+	if got := runBackupRestore(nil); got != 1 {
+		t.Fatalf("runBackupRestore() = %d, want 1", got)
+	}
+	if !strings.Contains(stderrBuf.String(), "no backups available") {
+		t.Fatalf("stderr = %q, want no-backups error", stderrBuf.String())
+	}
+}
+
 type cliStubOptions struct {
 	stdout                *bytes.Buffer
 	stderr                *bytes.Buffer
@@ -269,6 +343,7 @@ type cliStubOptions struct {
 	detectScope           func(string) (vault.Scope, error)
 	confirmScope          func(vault.Scope) (bool, error)
 	confirmMigration      func(vault.Scope, []vault.Credential) (bool, error)
+	promptBackupSelection func([]vault.BackupSnapshot) (vault.BackupSnapshot, error)
 	now                   func() time.Time
 }
 
@@ -286,6 +361,7 @@ func stubCLIEnv(t *testing.T, opts cliStubOptions) func() {
 	originalDetectScope := detectScope
 	originalConfirmScope := confirmScopeFunc
 	originalConfirmMigration := confirmScopeMigrationFunc
+	originalPromptBackupSelection := promptBackupSelectionFunc
 	originalNow := now
 
 	stdout = bytes.NewBuffer(nil)
@@ -323,6 +399,9 @@ func stubCLIEnv(t *testing.T, opts cliStubOptions) func() {
 	if opts.confirmMigration != nil {
 		confirmScopeMigrationFunc = opts.confirmMigration
 	}
+	if opts.promptBackupSelection != nil {
+		promptBackupSelectionFunc = opts.promptBackupSelection
+	}
 	if opts.now != nil {
 		now = opts.now
 	}
@@ -339,6 +418,7 @@ func stubCLIEnv(t *testing.T, opts cliStubOptions) func() {
 		detectScope = originalDetectScope
 		confirmScopeFunc = originalConfirmScope
 		confirmScopeMigrationFunc = originalConfirmMigration
+		promptBackupSelectionFunc = originalPromptBackupSelection
 		now = originalNow
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 
@@ -31,6 +32,7 @@ var (
 	currentWorkingDir         = os.Getwd
 	confirmScopeFunc          = confirmScopePrompt
 	confirmScopeMigrationFunc = confirmScopeMigrationPrompt
+	promptBackupSelectionFunc = promptBackupSelectionPrompt
 
 	now = time.Now
 )
@@ -111,6 +113,10 @@ func confirmScopeMigration(scope vault.Scope, credentials []vault.Credential) (b
 	return confirmScopeMigrationFunc(scope, credentials)
 }
 
+func promptBackupSelection(snapshots []vault.BackupSnapshot) (vault.BackupSnapshot, error) {
+	return promptBackupSelectionFunc(snapshots)
+}
+
 func confirmScopePrompt(scope vault.Scope) (bool, error) {
 	return promptYesNo(fmt.Sprintf("Detected project:\n  root: %s\n  scope: %s\n  label: %s\n\nUse this project scope? [y/N] ", scope.Path, scope.ID, scope.Label))
 }
@@ -132,6 +138,40 @@ func promptYesNo(prompt string) (bool, error) {
 
 	answer := strings.ToLower(strings.TrimSpace(response))
 	return answer == "y" || answer == "yes", nil
+}
+
+func promptBackupSelectionPrompt(snapshots []vault.BackupSnapshot) (vault.BackupSnapshot, error) {
+	if len(snapshots) == 0 {
+		return vault.BackupSnapshot{}, fmt.Errorf("no backups available")
+	}
+
+	if _, err := fmt.Fprintln(stderr, "Available backups:"); err != nil {
+		return vault.BackupSnapshot{}, fmt.Errorf("write backup list header: %w", err)
+	}
+	for i, snapshot := range snapshots {
+		label := snapshot.Kind
+		if snapshot.Recommended {
+			label += ", latest recommended"
+		}
+		if _, err := fmt.Fprintf(stderr, "  %d. %s (%s)\n", i+1, snapshot.Name, label); err != nil {
+			return vault.BackupSnapshot{}, fmt.Errorf("write backup list item: %w", err)
+		}
+	}
+	if _, err := fmt.Fprint(stderr, "\nSelect backup to restore: "); err != nil {
+		return vault.BackupSnapshot{}, fmt.Errorf("write backup selection prompt: %w", err)
+	}
+
+	reader := bufio.NewReader(os.Stdin)
+	response, err := reader.ReadString('\n')
+	if err != nil {
+		return vault.BackupSnapshot{}, fmt.Errorf("read backup selection: %w", err)
+	}
+	choice, err := strconv.Atoi(strings.TrimSpace(response))
+	if err != nil || choice < 1 || choice > len(snapshots) {
+		return vault.BackupSnapshot{}, fmt.Errorf("invalid backup selection")
+	}
+
+	return snapshots[choice-1], nil
 }
 
 func ensureVaultDoesNotExist() error {
