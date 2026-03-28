@@ -34,7 +34,7 @@ func runBackupRestore(args []string) int {
 		return 2
 	}
 
-	snapshots, err := vault.ListBackupSnapshots()
+	snapshots, err := listBackupSnapshots()
 	if err != nil {
 		printCommandError(err)
 		return 1
@@ -44,12 +44,12 @@ func runBackupRestore(args []string) int {
 		return 1
 	}
 
-	selected, err := promptBackupSelection(snapshots)
+	passphrase, err := promptPassphrase("Vault passphrase: ")
 	if err != nil {
 		printCommandError(err)
 		return 1
 	}
-	passphrase, err := promptPassphrase("Vault passphrase: ")
+	selected, err := promptBackupSelection(snapshots)
 	if err != nil {
 		printCommandError(err)
 		return 1
