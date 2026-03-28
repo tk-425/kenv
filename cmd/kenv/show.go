@@ -22,7 +22,17 @@ func runShow(args []string) int {
 		return 1
 	}
 
-	credential, err := vault.GetCredentialByName(v, args[0])
+	scope, err := detectCurrentScope()
+	if err != nil {
+		printCommandError(err)
+		return 1
+	}
+	if err := ensureNoPendingScopeMigration(v, scope); err != nil {
+		printCommandError(err)
+		return 1
+	}
+
+	credential, err := vault.GetCredentialByScopeAndEnvKey(v, scope.ID, args[0])
 	if err != nil {
 		printCommandError(err)
 		return 1
@@ -34,5 +44,5 @@ func runShow(args []string) int {
 
 func printShowUsage() {
 	fmt.Fprintln(stderr, `Usage:
-  kenv show <name>`)
+  kenv show <env-key>`)
 }
