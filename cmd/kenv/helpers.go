@@ -24,6 +24,7 @@ var (
 
 	loadVaultCiphertext       = vault.LoadCiphertext
 	saveVaultCiphertext       = vault.SaveCiphertext
+	listBackupSnapshots      = vault.ListBackupSnapshots
 	encryptVaultData          = vault.EncryptVault
 	decryptVaultData          = vault.DecryptVault
 	detectScope               = vault.DetectScope

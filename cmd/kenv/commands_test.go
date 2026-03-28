@@ -294,11 +294,22 @@ func TestRunBackupRestoreRestoresSelectedSnapshot(t *testing.T) {
 		t.Fatal("expected older post snapshot")
 	}
 
+	callOrder := []string{}
 	var stdoutBuf bytes.Buffer
 	reset := stubCLIEnv(t, cliStubOptions{
-		stdout:                &stdoutBuf,
-		promptPassphrase:      func(string) (string, error) { return "vault-passphrase", nil },
-		promptBackupSelection: func([]vault.BackupSnapshot) (vault.BackupSnapshot, error) { return target, nil },
+		stdout: &stdoutBuf,
+		listBackupSnapshots: func() ([]vault.BackupSnapshot, error) {
+			callOrder = append(callOrder, "list")
+			return snapshots, nil
+		},
+		promptPassphrase: func(string) (string, error) {
+			callOrder = append(callOrder, "passphrase")
+			return "vault-passphrase", nil
+		},
+		promptBackupSelection: func([]vault.BackupSnapshot) (vault.BackupSnapshot, error) {
+			callOrder = append(callOrder, "selection")
+			return target, nil
+		},
 	})
 	defer reset()
 
@@ -311,6 +322,50 @@ func TestRunBackupRestoreRestoresSelectedSnapshot(t *testing.T) {
 	decrypted := decryptTestVault(t, "vault-passphrase")
 	if len(decrypted.Credentials) != 0 {
 		t.Fatalf("len(credentials) = %d, want 0", len(decrypted.Credentials))
+	}
+	if got, want := strings.Join(callOrder, ","), "list,passphrase,selection"; got != want {
+		t.Fatalf("call order = %q, want %q", got, want)
+	}
+}
+
+func TestRunBackupRestoreStopsBeforeSelectionWhenPassphraseFails(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	ciphertext, err := vault.EncryptVault(vault.Vault{Version: vault.CurrentVersion, Credentials: []vault.Credential{}}, "vault-passphrase")
+	if err != nil {
+		t.Fatalf("EncryptVault() error = %v", err)
+	}
+	if err := vault.SaveCiphertext(ciphertext); err != nil {
+		t.Fatalf("SaveCiphertext() error = %v", err)
+	}
+
+	callOrder := []string{}
+	var stderrBuf bytes.Buffer
+	reset := stubCLIEnv(t, cliStubOptions{
+		listBackupSnapshots: func() ([]vault.BackupSnapshot, error) {
+			callOrder = append(callOrder, "list")
+			return []vault.BackupSnapshot{{Name: "vault-test-post.age", Kind: "post"}}, nil
+		},
+		stderr: &stderrBuf,
+		promptPassphrase: func(string) (string, error) {
+			callOrder = append(callOrder, "passphrase")
+			return "", vault.ErrPromptRequiresTTY
+		},
+		promptBackupSelection: func([]vault.BackupSnapshot) (vault.BackupSnapshot, error) {
+			callOrder = append(callOrder, "selection")
+			return vault.BackupSnapshot{}, nil
+		},
+	})
+	defer reset()
+
+	if got := runBackupRestore(nil); got != 1 {
+		t.Fatalf("runBackupRestore() = %d, want 1", got)
+	}
+	if got, want := strings.Join(callOrder, ","), "list,passphrase"; got != want {
+		t.Fatalf("call order = %q, want %q", got, want)
+	}
+	if !strings.Contains(stderrBuf.String(), vault.ErrPromptRequiresTTY.Error()) {
+		t.Fatalf("stderr = %q, want passphrase prompt error", stderrBuf.String())
 	}
 }
 
@@ -379,6 +434,7 @@ type cliStubOptions struct {
 	promptPassphrase      func(string) (string, error)
 	promptPassphraseTwice func(string, string) (string, error)
 	promptSecret          func(string) (string, error)
+	listBackupSnapshots   func() ([]vault.BackupSnapshot, error)
 	parentEnviron         func() []string
 	runChildProcess       func([]string, []string) (int, error)
 	currentWorkingDir     func() (string, error)
@@ -397,6 +453,7 @@ func stubCLIEnv(t *testing.T, opts cliStubOptions) func() {
 	originalPromptPassphrase := promptPassphrase
 	originalPromptPassphraseTwice := promptPassphraseTwice
 	originalPromptSecret := promptSecretValue
+	originalListBackupSnapshots := listBackupSnapshots
 	originalParentEnviron := parentEnviron
 	originalRunChildProcess := runChildProcess
 	originalCurrentWorkingDir := currentWorkingDir
@@ -422,6 +479,9 @@ func stubCLIEnv(t *testing.T, opts cliStubOptions) func() {
 	}
 	if opts.promptSecret != nil {
 		promptSecretValue = opts.promptSecret
+	}
+	if opts.listBackupSnapshots != nil {
+		listBackupSnapshots = opts.listBackupSnapshots
 	}
 	if opts.parentEnviron != nil {
 		parentEnviron = opts.parentEnviron
@@ -454,6 +514,7 @@ func stubCLIEnv(t *testing.T, opts cliStubOptions) func() {
 		promptPassphrase = originalPromptPassphrase
 		promptPassphraseTwice = originalPromptPassphraseTwice
 		promptSecretValue = originalPromptSecret
+		listBackupSnapshots = originalListBackupSnapshots
 		parentEnviron = originalParentEnviron
 		runChildProcess = originalRunChildProcess
 		currentWorkingDir = originalCurrentWorkingDir
