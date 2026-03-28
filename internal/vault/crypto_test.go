@@ -1,6 +1,7 @@
 package vault
 
 import (
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -212,6 +213,107 @@ func TestMarshalVaultNormalizesNilCredentials(t *testing.T) {
 	}
 	if !strings.Contains(string(plaintext), `"credentials":[]`) {
 		t.Fatalf("marshalVault() did not normalize empty credentials: %s", plaintext)
+	}
+}
+
+func TestValidateVaultNormalizesScopedFieldsInPlace(t *testing.T) {
+	vault := Vault{
+		Version: CurrentVersion,
+		Credentials: []Credential{
+			testCredential(" github.com/tk-425/kenv ", " kenv ", " /tmp/kenv ", " OPENAI_API_KEY ", "kvn_1234567890abcdefghij", "sk-test-secret"),
+		},
+	}
+
+	if err := validateVault(&vault); err != nil {
+		t.Fatalf("validateVault() error = %v", err)
+	}
+
+	credential := vault.Credentials[0]
+	if credential.ScopeID != "github.com/tk-425/kenv" {
+		t.Fatalf("ScopeID = %q, want %q", credential.ScopeID, "github.com/tk-425/kenv")
+	}
+	if credential.ScopeLabel != "kenv" {
+		t.Fatalf("ScopeLabel = %q, want %q", credential.ScopeLabel, "kenv")
+	}
+	if credential.ScopePath != "/tmp/kenv" {
+		t.Fatalf("ScopePath = %q, want %q", credential.ScopePath, "/tmp/kenv")
+	}
+	if credential.EnvKey != "OPENAI_API_KEY" {
+		t.Fatalf("EnvKey = %q, want %q", credential.EnvKey, "OPENAI_API_KEY")
+	}
+}
+
+func TestMarshalVaultTrimsScopedFields(t *testing.T) {
+	vault := Vault{
+		Version: CurrentVersion,
+		Credentials: []Credential{
+			testCredential(" github.com/tk-425/kenv ", " kenv ", " /tmp/kenv ", " OPENAI_API_KEY ", "kvn_1234567890abcdefghij", "sk-test-secret"),
+		},
+	}
+
+	plaintext, err := marshalVault(vault)
+	if err != nil {
+		t.Fatalf("marshalVault() error = %v", err)
+	}
+
+	var got Vault
+	if err := json.Unmarshal(plaintext, &got); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	if len(got.Credentials) != 1 {
+		t.Fatalf("len(Credentials) = %d, want 1", len(got.Credentials))
+	}
+
+	credential := got.Credentials[0]
+	if credential.ScopeID != "github.com/tk-425/kenv" {
+		t.Fatalf("ScopeID = %q, want %q", credential.ScopeID, "github.com/tk-425/kenv")
+	}
+	if credential.ScopeLabel != "kenv" {
+		t.Fatalf("ScopeLabel = %q, want %q", credential.ScopeLabel, "kenv")
+	}
+	if credential.ScopePath != "/tmp/kenv" {
+		t.Fatalf("ScopePath = %q, want %q", credential.ScopePath, "/tmp/kenv")
+	}
+	if credential.EnvKey != "OPENAI_API_KEY" {
+		t.Fatalf("EnvKey = %q, want %q", credential.EnvKey, "OPENAI_API_KEY")
+	}
+}
+
+func TestUnmarshalVaultTrimsScopedFields(t *testing.T) {
+	plaintext := []byte(`{"version":1,"credentials":[{"scope_id":" github.com/tk-425/kenv ","scope_label":" kenv ","scope_path":" /tmp/kenv ","env_key":" OPENAI_API_KEY ","placeholder":"kvn_1234567890abcdefghij","secret":"sk-test-secret","created_at":"2026-03-26T00:00:00Z"}]}`)
+
+	got, err := unmarshalVault(plaintext)
+	if err != nil {
+		t.Fatalf("unmarshalVault() error = %v", err)
+	}
+	if len(got.Credentials) != 1 {
+		t.Fatalf("len(Credentials) = %d, want 1", len(got.Credentials))
+	}
+
+	credential := got.Credentials[0]
+	if credential.ScopeID != "github.com/tk-425/kenv" {
+		t.Fatalf("ScopeID = %q, want %q", credential.ScopeID, "github.com/tk-425/kenv")
+	}
+	if credential.ScopeLabel != "kenv" {
+		t.Fatalf("ScopeLabel = %q, want %q", credential.ScopeLabel, "kenv")
+	}
+	if credential.ScopePath != "/tmp/kenv" {
+		t.Fatalf("ScopePath = %q, want %q", credential.ScopePath, "/tmp/kenv")
+	}
+	if credential.EnvKey != "OPENAI_API_KEY" {
+		t.Fatalf("EnvKey = %q, want %q", credential.EnvKey, "OPENAI_API_KEY")
+	}
+}
+
+func TestDecryptVaultRejectsWhitespacePaddedPlaceholder(t *testing.T) {
+	ciphertext, err := encryptPlaintext([]byte(`{"version":1,"credentials":[{"scope_id":"github.com/tk-425/kenv","scope_label":"kenv","scope_path":"/tmp/kenv","env_key":"OPENAI_API_KEY","placeholder":" kvn_1234567890abcdefghij ","secret":"a","created_at":"2026-03-26T00:00:00Z"}]}`), "correct horse battery staple")
+	if err != nil {
+		t.Fatalf("encryptPlaintext() error = %v", err)
+	}
+
+	_, err = DecryptVault(ciphertext, "correct horse battery staple")
+	if !errors.Is(err, ErrInvalidVaultData) {
+		t.Fatalf("DecryptVault() error = %v, want ErrInvalidVaultData", err)
 	}
 }
 
