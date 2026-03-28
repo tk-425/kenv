@@ -54,6 +54,22 @@ OPENAI_API_KEY=kvn_1234567890abcdefghij
 kenv run --env .env -- node server.js
 ```
 
+By default, `kenv run` starts the child process from a minimal baseline environment instead of inheriting your full shell session. This is intentional: it reduces accidental leakage of unrelated shell variables, machine-specific config, and other secrets into the child process.
+
+If your command depends on variables already loaded into your shell, use `--inherit-env`:
+
+```bash
+kenv run --inherit-env --env .env -- npm run dev
+```
+
+Use this when the child command needs values coming from places like:
+
+- `~/.zshrc`
+- `direnv`
+- manual `export` commands in the current terminal
+
+With `--inherit-env`, `kenv` starts from the current shell environment first, then overlays values from the env file and resolved vault placeholders.
+
 ## Command Overview
 
 - `kenv init` — initialize the local encrypted vault
@@ -62,6 +78,7 @@ kenv run --env .env -- node server.js
 - `kenv show <env-key>` — show the placeholder for the current project scope
 - `kenv rm <env-key>` — remove a scoped secret
 - `kenv run --env <file> -- <command...>` — resolve placeholders and run a child command
+- `kenv run --inherit-env --env <file> -- <command...>` — do the same, but start from the current shell environment first
 - `kenv scope migrate` — migrate local-scope credentials into the current git-backed scope
 - `kenv backup restore` — restore from an automatically created encrypted vault backup
 - `kenv version` — print the current version

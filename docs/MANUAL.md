@@ -334,7 +334,18 @@ Behavior:
 - builds a child environment
 - spawns the requested command
 
-By default, `kenv run` starts from a minimal baseline environment. `--inherit-env` loads the current shell environment first, then overlays values from the env file and resolved secrets.
+By default, `kenv run` starts from a minimal baseline environment. This is intentional. It reduces accidental leakage of unrelated shell variables, machine-specific config, and other secrets into the child process.
+
+Some commands depend on values that are already present in your shell session, such as variables loaded from `~/.zshrc`, `direnv`, or manual `export` commands. In those cases, use `--inherit-env`.
+
+`--inherit-env` loads the current shell environment first, then overlays values from the env file and resolved secrets.
+
+This means:
+
+- plain `kenv run --env .env -- ...` favors isolation
+- `kenv run --inherit-env --env .env -- ...` favors compatibility with tools that expect existing shell variables
+
+Use `--inherit-env` only when the child command actually needs values from the current shell environment.
 
 Important:
 
