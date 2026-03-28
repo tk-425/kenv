@@ -314,6 +314,48 @@ func TestRunBackupRestoreRestoresSelectedSnapshot(t *testing.T) {
 	}
 }
 
+func TestRunBackupUsageRouting(t *testing.T) {
+	testCases := []struct {
+		name string
+		args []string
+		want int
+	}{
+		{name: "no args", args: nil, want: 2},
+		{name: "long help", args: []string{"--help"}, want: 0},
+		{name: "short help", args: []string{"-h"}, want: 0},
+		{name: "unknown subcommand", args: []string{"wat"}, want: 2},
+		{name: "restore help delegated", args: []string{"restore", "--help"}, want: 0},
+		{name: "restore short help delegated", args: []string{"restore", "-h"}, want: 0},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			var stderrBuf bytes.Buffer
+			reset := stubCLIEnv(t, cliStubOptions{stderr: &stderrBuf})
+			defer reset()
+
+			if got := runBackup(tc.args); got != tc.want {
+				t.Fatalf("runBackup(%v) = %d, want %d", tc.args, got, tc.want)
+			}
+
+			output := stderrBuf.String()
+			switch tc.name {
+			case "restore help delegated", "restore short help delegated":
+				if !strings.Contains(output, "kenv backup restore") {
+					t.Fatalf("stderr = %q, want restore usage", output)
+				}
+				if strings.Contains(output, "kenv backup <subcommand>") {
+					t.Fatalf("stderr = %q, want restore usage only", output)
+				}
+			default:
+				if !strings.Contains(output, "kenv backup <subcommand>") {
+					t.Fatalf("stderr = %q, want backup usage", output)
+				}
+			}
+		})
+	}
+}
+
 func TestRunBackupRestoreFailsWhenNoBackupsExist(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 

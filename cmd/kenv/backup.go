@@ -7,15 +7,15 @@ import (
 )
 
 func runBackup(args []string) int {
-	if wantsHelp(args) || len(args) == 0 {
+	if len(args) == 0 {
 		printBackupUsage()
-		if wantsHelp(args) {
-			return 0
-		}
 		return 2
 	}
 
 	switch args[0] {
+	case "-h", "--help":
+		printBackupUsage()
+		return 0
 	case "restore":
 		return runBackupRestore(args[1:])
 	default:
