@@ -58,7 +58,9 @@ func runAdd(args []string) int {
 		return 1
 	}
 
-	fmt.Fprintln(stdout, credential.Placeholder)
+	fmt.Fprintf(stdout, "%s=%s\n", credential.EnvKey, credential.Placeholder)
+	fmt.Fprintln(stderr, "Secret saved.")
+	fmt.Fprintln(stderr, "kenv stores the secret securely and will not display it back to you later.")
 	return 0
 }
 

@@ -34,8 +34,10 @@ func TestRunAddStoresScopedCredentialAndPrintsPlaceholder(t *testing.T) {
 	createTestVault(t, "vault-passphrase", nil)
 
 	var stdoutBuf bytes.Buffer
+	var stderrBuf bytes.Buffer
 	reset := stubCLIEnv(t, cliStubOptions{
 		stdout:           &stdoutBuf,
+		stderr:           &stderrBuf,
 		promptPassphrase: func(string) (string, error) { return "vault-passphrase", nil },
 		promptSecret:     func(string) (string, error) { return "sk-live-secret", nil },
 		confirmScope:     func(vault.Scope) (bool, error) { return true, nil },
@@ -61,8 +63,50 @@ func TestRunAddStoresScopedCredentialAndPrintsPlaceholder(t *testing.T) {
 	if credential.ScopeID != "github.com/tk-425/kenv" || credential.EnvKey != "OPENAI_API_KEY" {
 		t.Fatalf("credential = %#v, want scoped OPENAI_API_KEY record", credential)
 	}
-	if strings.TrimSpace(stdoutBuf.String()) != credential.Placeholder {
-		t.Fatalf("stdout = %q, want placeholder %q", stdoutBuf.String(), credential.Placeholder)
+	if got, want := stdoutBuf.String(), "OPENAI_API_KEY="+credential.Placeholder+"\n"; got != want {
+		t.Fatalf("stdout = %q, want %q", got, want)
+	}
+	if got, want := stderrBuf.String(), "Secret saved.\nkenv stores the secret securely and will not display it back to you later.\n"; got != want {
+		t.Fatalf("stderr = %q, want %q", got, want)
+	}
+}
+
+func TestRunAddPrintsNormalizedEnvAssignment(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	createTestVault(t, "vault-passphrase", nil)
+
+	var stdoutBuf bytes.Buffer
+	var stderrBuf bytes.Buffer
+	reset := stubCLIEnv(t, cliStubOptions{
+		stdout:           &stdoutBuf,
+		stderr:           &stderrBuf,
+		promptPassphrase: func(string) (string, error) { return "vault-passphrase", nil },
+		promptSecret:     func(string) (string, error) { return "sk-live-secret", nil },
+		confirmScope:     func(vault.Scope) (bool, error) { return true, nil },
+		currentWorkingDir: func() (string, error) {
+			return "/tmp/kenv", nil
+		},
+		detectScope: func(string) (vault.Scope, error) {
+			return vault.Scope{ID: "github.com/tk-425/kenv", Label: "kenv", Path: "/tmp/kenv", GitBacked: true}, nil
+		},
+		now: func() time.Time { return time.Unix(1700000000, 0).UTC() },
+	})
+	defer reset()
+
+	if got := runAdd([]string{" OPENAI_API_KEY "}); got != 0 {
+		t.Fatalf("runAdd() = %d, want 0", got)
+	}
+
+	decrypted := decryptTestVault(t, "vault-passphrase")
+	if len(decrypted.Credentials) != 1 {
+		t.Fatalf("len(credentials) = %d, want 1", len(decrypted.Credentials))
+	}
+	credential := decrypted.Credentials[0]
+	if got, want := stdoutBuf.String(), "OPENAI_API_KEY="+credential.Placeholder+"\n"; got != want {
+		t.Fatalf("stdout = %q, want %q", got, want)
+	}
+	if got, want := stderrBuf.String(), "Secret saved.\nkenv stores the secret securely and will not display it back to you later.\n"; got != want {
+		t.Fatalf("stderr = %q, want %q", got, want)
 	}
 }
 
@@ -90,6 +134,9 @@ func TestRunAddFailsWhenMigrationIsPending(t *testing.T) {
 	}
 	if !strings.Contains(stderrBuf.String(), "kenv scope migrate") {
 		t.Fatalf("stderr = %q, want migration recommendation", stderrBuf.String())
+	}
+	if strings.Contains(stderrBuf.String(), "Secret saved.") {
+		t.Fatalf("stderr = %q, want no add success reminder", stderrBuf.String())
 	}
 }
 
