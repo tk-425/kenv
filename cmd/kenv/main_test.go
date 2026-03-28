@@ -59,6 +59,9 @@ func TestRun(t *testing.T) {
 		{name: "unknown command", args: []string{"wat"}, want: 2},
 		{name: "init help", args: []string{"init", "--help"}, want: 0},
 		{name: "run help", args: []string{"run", "--help"}, want: 0},
+		{name: "backup help long", args: []string{"backup", "--help"}, want: 0},
+		{name: "backup help short", args: []string{"backup", "-h"}, want: 0},
+		{name: "backup restore help", args: []string{"backup", "restore", "--help"}, want: 0},
 		{name: "scope help", args: []string{"scope", "--help"}, want: 0},
 		{name: "run invalid shape", args: []string{"run", "--env", ".env"}, want: 2},
 	}
