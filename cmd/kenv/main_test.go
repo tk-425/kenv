@@ -32,7 +32,9 @@ func TestHasRunShape(t *testing.T) {
 	}{
 		{name: "valid", args: []string{"--env", ".env", "--", "echo", "hi"}, want: true},
 		{name: "valid with inherit env", args: []string{"--inherit-env", "--env", ".env", "--", "echo", "hi"}, want: true},
-		{name: "missing env flag", args: []string{".env", "--", "echo", "hi"}, want: false},
+		{name: "unrecognized positional arg", args: []string{".env", "--", "echo", "hi"}, want: false},
+		{name: "valid without env flag", args: []string{"--", "echo", "hi"}, want: true},
+		{name: "valid with inherit-env no env flag", args: []string{"--inherit-env", "--", "echo", "hi"}, want: true},
 		{name: "empty env path", args: []string{"--env", "", "--", "echo", "hi"}, want: false},
 		{name: "missing separator", args: []string{"--env", ".env", "echo", "hi"}, want: false},
 		{name: "missing command", args: []string{"--env", ".env", "--"}, want: false},
