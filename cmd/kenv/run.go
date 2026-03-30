@@ -63,29 +63,36 @@ type runOptions struct {
 }
 
 func hasRunShape(args []string) bool {
-	if len(args) < 4 {
+	if len(args) == 0 {
 		return false
 	}
 
 	index := 0
 	if args[index] == "--inherit-env" {
 		index++
-		if len(args[index:]) < 4 {
+	}
+
+	if index >= len(args) {
+		return false
+	}
+
+	if args[index] == "--env" {
+		if index+3 > len(args) {
 			return false
 		}
+		if args[index+1] == "" {
+			return false
+		}
+		if args[index+2] != "--" {
+			return false
+		}
+		return len(args[index+3:]) > 0
 	}
 
-	if args[index] != "--env" {
+	if args[index] != "--" {
 		return false
 	}
-	if args[index+1] == "" {
-		return false
-	}
-	if args[index+2] != "--" {
-		return false
-	}
-
-	return len(args[index+3:]) > 0
+	return len(args[index+1:]) > 0
 }
 
 func parseRunOptions(args []string) runOptions {
@@ -96,10 +103,18 @@ func parseRunOptions(args []string) runOptions {
 		index++
 	}
 
+	if args[index] == "--env" {
+		return runOptions{
+			inheritEnv: inheritEnv,
+			envPath:    args[index+1],
+			command:    append([]string(nil), args[index+3:]...),
+		}
+	}
+
 	return runOptions{
 		inheritEnv: inheritEnv,
-		envPath:    args[index+1],
-		command:    append([]string(nil), args[index+3:]...),
+		envPath:    ".env",
+		command:    append([]string(nil), args[index+1:]...),
 	}
 }
 
@@ -197,5 +212,5 @@ func (b *envBuilder) list() []string {
 
 func printRunUsage() {
 	fmt.Fprintln(os.Stderr, `Usage:
-  kenv run [--inherit-env] --env <file> -- <command...>`)
+  kenv run [--inherit-env] [--env <file>] -- <command...>`)
 }
