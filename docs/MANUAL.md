@@ -91,7 +91,7 @@ OPENAI_API_KEY=kvn_1234567890abcdefghij
 ### 4. Run your app through `kenv`
 
 ```bash
-kenv run --env .env -- node server.js
+kenv run -- node server.js
 ```
 
 At runtime, `kenv` resolves the placeholder and starts the command with the real secret in the process environment.
@@ -314,15 +314,15 @@ Resolve placeholders from an env file and start a command.
 Usage:
 
 ```bash
-kenv run [--inherit-env] --env <file> -- <command...>
+kenv run [--inherit-env] [--env <file>] -- <command...>
 ```
 
 Examples:
 
 ```bash
-kenv run --env .env -- node server.js
+kenv run -- node server.js
 kenv run --env .env.local -- python app.py
-kenv run --inherit-env --env .env -- npm run dev
+kenv run --inherit-env -- npm run dev
 ```
 
 Behavior:
@@ -342,8 +342,8 @@ Some commands depend on values that are already present in your shell session, s
 
 This means:
 
-- plain `kenv run --env .env -- ...` favors isolation
-- `kenv run --inherit-env --env .env -- ...` favors compatibility with tools that expect existing shell variables
+- plain `kenv run -- ...` favors isolation
+- `kenv run --inherit-env -- ...` favors compatibility with tools that expect existing shell variables
 
 Use `--inherit-env` only when the child command actually needs values from the current shell environment.
 
@@ -479,7 +479,7 @@ kenv scope migrate
 ```bash
 kenv init
 kenv add OPENAI_API_KEY >> .env
-kenv run --env .env -- npm run dev
+kenv run -- npm run dev
 ```
 
 ### Existing non-Git local project
@@ -487,7 +487,7 @@ kenv run --env .env -- npm run dev
 ```bash
 cd ~/scratch/my-script
 kenv add API_TOKEN > .env
-kenv run --env .env -- python script.py
+kenv run -- python script.py
 ```
 
 ### Project that later becomes a Git repo
@@ -542,7 +542,7 @@ PORT=3000
 Run:
 
 ```bash
-kenv run --env .env -- node server.js
+kenv run -- node server.js
 ```
 
 Minimal usage:
@@ -563,7 +563,7 @@ SESSION_SECRET=kvn_abcdefghij1234567890
 Run:
 
 ```bash
-kenv run --env .env -- node server.js
+kenv run -- node server.js
 ```
 
 ### Next.js
@@ -597,7 +597,7 @@ OPENAI_API_KEY=kvn_1234567890abcdefghij
 Run a script:
 
 ```bash
-kenv run --env .env -- python app.py
+kenv run -- python app.py
 ```
 
 Minimal usage:
@@ -611,13 +611,13 @@ print(os.environ["OPENAI_API_KEY"])
 ### FastAPI
 
 ```bash
-kenv run --env .env -- uvicorn app:app --reload
+kenv run -- uvicorn app:app --reload
 ```
 
 ### Django
 
 ```bash
-kenv run --env .env -- python manage.py runserver
+kenv run -- python manage.py runserver
 ```
 
 ### Ruby
@@ -631,13 +631,13 @@ OPENAI_API_KEY=kvn_1234567890abcdefghij
 Run:
 
 ```bash
-kenv run --env .env -- ruby app.rb
+kenv run -- ruby app.rb
 ```
 
 ### Rails
 
 ```bash
-kenv run --env .env -- bin/rails server
+kenv run -- bin/rails server
 ```
 
 ### Go
@@ -651,7 +651,7 @@ DATABASE_URL=kvn_1234567890abcdefghij
 Run:
 
 ```bash
-kenv run --env .env -- go run ./cmd/api
+kenv run -- go run ./cmd/api
 ```
 
 Your Go process reads the final value from `os.Getenv`.
@@ -667,7 +667,7 @@ API_TOKEN=kvn_1234567890abcdefghij
 Run:
 
 ```bash
-kenv run --env .env -- bash deploy.sh
+kenv run -- bash deploy.sh
 ```
 
 ### Docker and local container workflows
@@ -675,7 +675,7 @@ kenv run --env .env -- bash deploy.sh
 For local workflows, use `kenv run` to launch Docker commands with resolved environment values:
 
 ```bash
-kenv run --env .env -- docker compose up
+kenv run -- docker compose up
 ```
 
 This is useful when the Docker command or wrapper script reads environment variables at launch time.
@@ -866,13 +866,13 @@ kenv rm OPENAI_API_KEY
 Run an app with resolved secrets:
 
 ```bash
-kenv run --env .env -- node server.js
+kenv run -- node server.js
 ```
 
 Run with inherited shell environment:
 
 ```bash
-kenv run --inherit-env --env .env -- npm run dev
+kenv run --inherit-env -- npm run dev
 ```
 
 Migrate local scope to Git-backed scope:

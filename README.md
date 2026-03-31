@@ -17,7 +17,7 @@ Instead of committing real secrets into `.env`, you store the secret once in the
 2. `kenv` stores the real secret in the encrypted vault
 3. `kenv` prints `OPENAI_API_KEY=kvn_...`
 4. Put that assignment into `.env`
-5. Run your app with `kenv run --env .env -- <command>`
+5. Run your app with `kenv run -- <command>`
 6. `kenv` replaces the placeholder with the real secret only for that child process
 
 Direct app launches will still see the raw placeholder. Only `kenv run` resolves it.
@@ -51,7 +51,7 @@ OPENAI_API_KEY=kvn_1234567890abcdefghij
 ### 4. Run your app through `kenv`
 
 ```bash
-kenv run --env .env -- node server.js
+kenv run -- node server.js
 ```
 
 By default, `kenv run` starts the child process from a minimal baseline environment instead of inheriting your full shell session. This is intentional: it reduces accidental leakage of unrelated shell variables, machine-specific config, and other secrets into the child process.
@@ -59,7 +59,7 @@ By default, `kenv run` starts the child process from a minimal baseline environm
 If your command depends on variables already loaded into your shell, use `--inherit-env`:
 
 ```bash
-kenv run --inherit-env --env .env -- npm run dev
+kenv run --inherit-env -- npm run dev
 ```
 
 Use this when the child command needs values coming from places like:
@@ -77,8 +77,8 @@ With `--inherit-env`, `kenv` starts from the current shell environment first, th
 - `kenv list` — list placeholders in the current project scope
 - `kenv show <env-key>` — show the placeholder for the current project scope
 - `kenv rm <env-key>` — remove a scoped secret
-- `kenv run --env <file> -- <command...>` — resolve placeholders and run a child command
-- `kenv run --inherit-env --env <file> -- <command...>` — resolve placeholders and run a child command, first inheriting the current shell environment for compatibility
+- `kenv run [--env <file>] -- <command...>` — resolve placeholders and run a child command (defaults to `.env`)
+- `kenv run --inherit-env [--env <file>] -- <command...>` — resolve placeholders and run a child command, first inheriting the current shell environment for compatibility
 - `kenv scope migrate` — migrate local-scope credentials into the current git-backed scope
 - `kenv backup restore` — restore from an automatically created encrypted vault backup
 - `kenv version` — print the current version
