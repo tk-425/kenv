@@ -13,9 +13,9 @@ Instead of committing real secrets into `.env`, you store the secret once in the
 
 ## How It Works
 
-1. Run `kenv add OPENAI_API_KEY`
+1. Run `kenv add <env-key>` and enter the secret value when prompted
 2. `kenv` stores the real secret in the encrypted vault
-3. `kenv` prints `OPENAI_API_KEY=kvn_...`
+3. `kenv` prints `<env-key>=kvn_...`
 4. Put that assignment into `.env`
 5. Run your app with `kenv run -- <command>`
 6. `kenv` replaces the placeholder with the real secret only for that child process
@@ -33,13 +33,15 @@ kenv init
 ### 2. Add a secret
 
 ```bash
-kenv add OPENAI_API_KEY
+kenv add <env-key>
 ```
 
-Example output:
+You'll be prompted for the secret value (input is hidden):
 
 ```text
-OPENAI_API_KEY=kvn_1234567890abcdefghij
+Secret value: ••••••••
+<env-key>=kvn_1234567890abcdefghij
+Secret saved.
 ```
 
 ### 3. Put the placeholder in `.env`

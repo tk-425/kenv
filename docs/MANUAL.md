@@ -64,7 +64,7 @@ You will be prompted for a vault passphrase twice.
 Inside your project:
 
 ```bash
-kenv add OPENAI_API_KEY
+kenv add <env-key>
 ```
 
 `kenv` will:
@@ -72,14 +72,16 @@ kenv add OPENAI_API_KEY
 - unlock the vault
 - detect the current project scope
 - ask you to confirm the detected scope
-- prompt for the secret value
+- prompt for the secret value (input is hidden)
 - print an `.env`-ready assignment line to stdout
 - print a reminder to stderr that the raw secret will not be displayed later
 
-Example output:
+You'll see:
 
 ```text
-OPENAI_API_KEY=kvn_1234567890abcdefghij
+Secret value: ••••••••
+<env-key>=kvn_1234567890abcdefghij
+Secret saved.
 ```
 
 ### 3. Put the placeholder in `.env`
@@ -184,6 +186,14 @@ Example:
 
 ```bash
 kenv add OPENAI_API_KEY
+```
+
+You'll be prompted for the secret value (input is hidden):
+
+```text
+Secret value: ••••••••
+OPENAI_API_KEY=kvn_1234567890abcdefghij
+Secret saved.
 ```
 
 Behavior:
