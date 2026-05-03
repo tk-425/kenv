@@ -47,7 +47,7 @@ Secret saved.
 ### 3. Put the placeholder in `.env`
 
 ```dotenv
-OPENAI_API_KEY=kvn_1234567890abcdefghij
+<env-key>=kvn_1234567890abcdefghij
 ```
 
 ### 4. Run your app through `kenv`
