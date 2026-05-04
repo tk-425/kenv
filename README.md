@@ -11,17 +11,6 @@ Instead of committing real secrets into `.env`, you store the secret once in the
 - Support project-scoped secrets, so the same env key can differ by repo
 - Make `.env` files portable while still resolving real secrets locally
 
-## How It Works
-
-1. Run `kenv add <env-key>` and enter the secret value when prompted
-2. `kenv` stores the real secret in the encrypted vault
-3. `kenv` prints `<env-key>=kvn_...`
-4. Put that assignment into `.env`
-5. Run your app with `kenv run -- <command>`
-6. `kenv` replaces the placeholder with the real secret only for that child process
-
-Direct app launches will still see the raw placeholder. Only `kenv run` resolves it.
-
 ## Quick Start
 
 ### 1. Initialize the vault
@@ -36,14 +25,6 @@ kenv init
 kenv add <env-key>
 ```
 
-You'll be prompted for the secret value (input is hidden):
-
-```text
-Secret value: ••••••••
-<env-key>=kvn_1234567890abcdefghij
-Secret saved.
-```
-
 ### 3. Put the placeholder in `.env`
 
 ```dotenv
@@ -53,82 +34,20 @@ Secret saved.
 ### 4. Run your app through `kenv`
 
 ```bash
-kenv run -- node server.js
+kenv run -- <command>
 ```
 
-By default, `kenv run` starts the child process from a minimal baseline environment instead of inheriting your full shell session. This is intentional: it reduces accidental leakage of unrelated shell variables, machine-specific config, and other secrets into the child process.
-
-If your command depends on variables already loaded into your shell, use `--inherit-env`:
-
-```bash
-kenv run --inherit-env -- npm run dev
-```
-
-Use this when the child command needs values coming from places like:
-
-- `~/.zshrc`
-- `direnv`
-- manual `export` commands in the current terminal
-
-With `--inherit-env`, `kenv` starts from the current shell environment first, then overlays values from the env file and resolved vault placeholders.
-
-## Command Overview
-
-- `kenv init` — initialize the local encrypted vault
-- `kenv add <env-key>` — store a scoped secret and print an `.env`-ready placeholder assignment
-- `kenv list` — list placeholders in the current project scope
-- `kenv show <env-key>` — show the placeholder for the current project scope
-- `kenv rm <env-key>` — remove a scoped secret
-- `kenv run [--env <file>] -- <command...>` — resolve placeholders and run a child command (defaults to `.env`)
-- `kenv run --inherit-env [--env <file>] -- <command...>` — resolve placeholders and run a child command, first inheriting the current shell environment for compatibility
-- `kenv scope migrate` — migrate local-scope credentials into the current git-backed scope
-- `kenv backup restore` — restore from an automatically created encrypted vault backup
-- `kenv version` — print the current version
-
-## Backup and Restore
-
-`kenv` automatically keeps encrypted vault snapshots under `~/.kenv/backups/`.
-
-- successful saves create `pre` and `post` snapshots
-- retention is fixed at 10 snapshots
-- `kenv backup restore` lets you recover from vault corruption or accidental changes
-
-Current restore flow:
-
-1. list available backups
-2. prompt for vault passphrase
-3. prompt for backup selection
-4. restore the selected snapshot
+For the full command reference, workflows, and troubleshooting, see the [manual](./docs/MANUAL.md).
 
 ## Build
 
-Development build:
-
 ```bash
-make build-dev
+make build-dev              # development build
+make build-release VERSION=x.y.z  # release build with injected version
 ```
-
-Release-style build with injected version:
-
-```bash
-make build-release VERSION=0.1.1
-```
-
-The source version stays `dev`; release versions are injected at build time.
 
 ## Install
 
 ```bash
 cp ./bin/kenv /usr/local/bin/kenv
 ```
-
-Typical local release install flow:
-
-```bash
-make build-release VERSION=0.1.1
-cp ./bin/kenv /usr/local/bin/kenv
-```
-
-## Documentation
-
-For the full manual, see [`docs/MANUAL.md`](./docs/MANUAL.md).

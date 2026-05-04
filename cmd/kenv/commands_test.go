@@ -576,3 +576,95 @@ func testCredential(scopeID, scopeLabel, scopePath, envKey, placeholder, secret 
 		CreatedAt:   time.Unix(1700000000, 0).UTC(),
 	}
 }
+
+func TestRunPassphraseChangesPassphrase(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	createTestVault(t, "old-passphrase", []vault.Credential{
+		testCredential("github.com/tk-425/kenv", "kenv", "/tmp/kenv", "OPENAI_API_KEY", "kvn_aaaaaaaaaaaaaaaaaaaa", "sk-secret"),
+	})
+
+	var stdoutBuf bytes.Buffer
+	reset := stubCLIEnv(t, cliStubOptions{
+		stdout:                &stdoutBuf,
+		promptPassphrase:      func(string) (string, error) { return "old-passphrase", nil },
+		promptPassphraseTwice: func(string, string) (string, error) { return "new-passphrase", nil },
+	})
+	defer reset()
+
+	if got := runPassphrase(nil); got != 0 {
+		t.Fatalf("runPassphrase() = %d, want 0", got)
+	}
+	if got, want := stdoutBuf.String(), "passphrase updated\n"; got != want {
+		t.Fatalf("stdout = %q, want %q", got, want)
+	}
+
+	decrypted := decryptTestVault(t, "new-passphrase")
+	if len(decrypted.Credentials) != 1 {
+		t.Fatalf("len(credentials) = %d, want 1", len(decrypted.Credentials))
+	}
+
+	ciphertext, err := vault.LoadCiphertext()
+	if err != nil {
+		t.Fatalf("LoadCiphertext() error = %v", err)
+	}
+	_, err = vault.DecryptVault(ciphertext, "old-passphrase")
+	if err == nil {
+		t.Fatal("vault should not decrypt with old passphrase")
+	}
+}
+
+func TestRunPassphraseFailsWrongOldPassphrase(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	createTestVault(t, "correct-passphrase", nil)
+
+	var stderrBuf bytes.Buffer
+	reset := stubCLIEnv(t, cliStubOptions{
+		stderr:           &stderrBuf,
+		promptPassphrase: func(string) (string, error) { return "wrong-passphrase", nil },
+	})
+	defer reset()
+
+	if got := runPassphrase(nil); got != 1 {
+		t.Fatalf("runPassphrase() = %d, want 1", got)
+	}
+	if !strings.Contains(stderrBuf.String(), "vault unlock failed") {
+		t.Fatalf("stderr = %q, want unlock error", stderrBuf.String())
+	}
+}
+
+func TestRunPassphraseFailsMismatch(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	createTestVault(t, "vault-passphrase", nil)
+
+	var stderrBuf bytes.Buffer
+	reset := stubCLIEnv(t, cliStubOptions{
+		stderr:                &stderrBuf,
+		promptPassphrase:      func(string) (string, error) { return "vault-passphrase", nil },
+		promptPassphraseTwice: func(string, string) (string, error) { return "", vault.ErrPassphraseMismatch },
+	})
+	defer reset()
+
+	if got := runPassphrase(nil); got != 1 {
+		t.Fatalf("runPassphrase() = %d, want 1", got)
+	}
+	if !strings.Contains(stderrBuf.String(), "passphrase confirmation does not match") {
+		t.Fatalf("stderr = %q, want mismatch error", stderrBuf.String())
+	}
+}
+
+func TestRunPassphraseFailsNoVault(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	var stderrBuf bytes.Buffer
+	reset := stubCLIEnv(t, cliStubOptions{
+		stderr: &stderrBuf,
+	})
+	defer reset()
+
+	if got := runPassphrase(nil); got != 1 {
+		t.Fatalf("runPassphrase() = %d, want 1", got)
+	}
+	if !strings.Contains(stderrBuf.String(), "vault does not exist") {
+		t.Fatalf("stderr = %q, want no-vault error", stderrBuf.String())
+	}
+}
