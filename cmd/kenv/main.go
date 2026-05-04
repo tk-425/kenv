@@ -34,6 +34,8 @@ func run(args []string) int {
 		return runBackup(args[1:])
 	case "version":
 		return runVersion(args[1:])
+	case "passwd":
+		return runPassphrase(args[1:])
 	case "help", "-h", "--help":
 		printTopLevelUsage()
 		return 0
@@ -59,6 +61,7 @@ Usage:
 	  run           Resolve placeholders from an env file and run a command
 	  scope         Manage project scope operations
 	  backup        Restore an automatically created vault backup
+	  passwd        Change the vault passphrase
 	  version       Print the kenv version
 
 Help:

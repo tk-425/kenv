@@ -139,6 +139,7 @@ If `/usr/local/bin` is not writable, run the copy step manually with `sudo`.
 
 - `kenv init` asks for the passphrase twice
 - commands that unlock the vault ask for the passphrase once
+- `kenv passwd` changes the vault passphrase (prompts for old passphrase, then new passphrase twice)
 - the passphrase is required to decrypt the vault contents
 
 ## Command Reference
@@ -448,6 +449,37 @@ dev
 
 Release builds should inject a concrete version string.
 
+### `kenv passwd`
+
+Change the vault passphrase.
+
+Usage:
+
+```bash
+kenv passwd
+```
+
+Behavior:
+
+- prompts for the current passphrase to unlock the vault
+- prompts for a new passphrase twice with mismatch validation
+- re-encrypts the vault with the new passphrase
+- preserves all existing credentials
+- creates automatic backup snapshots before and after the change
+
+Success output:
+
+```text
+passphrase updated
+```
+
+Common errors:
+
+- `vault does not exist; run 'kenv init' first`
+- `vault unlock failed`
+- `passphrase confirmation does not match`
+- `interactive terminal required for passphrase prompt`
+
 ## Project Scope Behavior
 
 ### Git-backed scope
@@ -516,19 +548,22 @@ kenv scope migrate
 
 ### Rotating a secret
 
-There is no dedicated rotate command today. A practical flow is:
+To change the vault passphrase:
 
-1. note or re-fetch the env key
-2. remove it from the current scope
-3. add it again with the new secret
-4. keep using the new placeholder in `.env`
+```bash
+kenv passwd
+```
 
-Example:
+This re-encrypts the vault with a new passphrase while preserving all credentials. A backup snapshot is created automatically.
+
+To rotate an individual secret, use:
 
 ```bash
 kenv rm OPENAI_API_KEY
 kenv add OPENAI_API_KEY
 ```
+
+Remember to update any placeholder still present in your `.env` files.
 
 ### Removing a secret
 
@@ -895,6 +930,12 @@ Print version:
 
 ```bash
 kenv version
+```
+
+Change passphrase:
+
+```bash
+kenv passwd
 ```
 
 ## Appendix
