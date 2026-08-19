@@ -1,23 +1,18 @@
 # vscode
 .vscode/
 
-# vmem
-.vmem/
-
 # AI Agents
-.rulez/
 .claude/
-.agent/
+.pipeline/
+.pipeline-archive/
+.vmem/
+.agents/
 .codex/
-.gemini/
 .opencode/
-.qwen/
 .mcp.json
+opencode.json
 CLAUDE.md
-GEMINI.md
-QWEN.md
 AGENTS.md
-.devflow/
 CONTEXT.md
 
 # docs
